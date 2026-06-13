@@ -1,4 +1,4 @@
-
+--- fixed 
 export type Library = { __current_tab: Tab?, __tabs: { Tab }, __all_elements: { { name: string, frame: Frame } }, __window: { main: Frame, euphoria: ScreenGui }, __resize_start: Vector2?, __size_start: UDim2?, __resizing: boolean, __ui_scale: number, __device: string?, __drag_input: InputObject?, __drag_start: Vector2?, __start_pos: UDim2?, __dragging: boolean?, __minimized: boolean, __toggle_keybind: Enum.KeyCode, get_device: (self: Library) -> (), notify: (self: Library, index: { title: string, content: string, duration: number?, notify_type: string }) -> (), get_screen_scale: (self: Library) -> (), mobile_ui_scale: (self: Library) -> (), mobile_controls: (self: Library) -> (), init: (self: Library, title: string?) -> Library, create_tab: (self: Library, name: string, icon: string?) -> Tab, create_tab_section: (self: Library, title: string) -> (), set_toggle_keybind: (self: Library, key: Enum.KeyCode) -> () }
 export type Tab = { __library: Library, button: TextButton, container: ScrollingFrame, label: TextLabel, highlight: Frame, outline: UIStroke, highlight_effect: Frame, icon: ImageLabel?, create_button: (self: Tab, index: { title: string, callback: () -> () }) -> (), create_divider: (self: Tab, text: string?) -> (), create_slider: (self: Tab, index: { title: string, minimum: number?, maximum: number?, default: number?, rounding: number?, callback: (value: number) -> () }) -> { Set: (self: any, value: number) -> () }, create_textbox: (self: Tab, index: { title: string, placeholder: string?, callback: (text: string) -> () }) -> { Set: (self: any, text: string) -> () }, create_module: (self: Tab, index: { title: string, default: boolean?, callback: (state: boolean) -> () }) -> Module, create_checkbox: (self: Tab, index: { title: string, default: boolean?, callback: (state: boolean) -> () }) -> (), create_dropdown: (self: Tab, index: { title: string, options: { string }, default: string | { string }?, multi_selection: boolean?, callback: (value: string | { string }) -> () }) -> { Set: (self: any, value: string | { string }) -> () } }
 export type Module = { __elements: { Instance }, __library: Library, create_checkbox: (self: Module, index: { title: string, default: boolean?, callback: (state: boolean) -> () }) -> (), create_divider: (self: Module, text: string?) -> (), create_textbox: (self: Module, index: { title: string, placeholder: string?, callback: (text: string) -> () }) -> { Set: (self: any, text: string) -> () }, create_slider: (self: Module, index: { title: string, minimum: number?, maximum: number?, default: number?, rounding: number?, callback: (value: number) -> () }) -> { Set: (self: any, value: number) -> () }, create_button: (self: Module, index: { title: string, callback: () -> () }) -> (), create_dropdown: (self: Module, index: { title: string, options: { string }, default: string | { string }?, multi_selection: boolean?, callback: (value: string | { string }) -> () }) -> { Set: (self: any, value: string | { string }) -> () } }
@@ -188,7 +188,7 @@ local function __notification_init() : ()
 	__title_label.Text = __notification.title
 	__title_label.TextColor3 = Color3.fromRGB(220, 220, 220)
 	__title_label.TextSize = 14
-	__title_label.Font = Enum.Font.Gotham
+	__title_label.Font = Enum.Font.GothamBold
 	__title_label.TextXAlignment = Enum.TextXAlignment.Left
 	__title_label.TextYAlignment = Enum.TextYAlignment.Top
 	__title_label.ZIndex = 102
@@ -201,7 +201,7 @@ local function __notification_init() : ()
 	__content_label.Text = __notification.content
 	__content_label.TextColor3 = Color3.fromRGB(180, 180, 180)
 	__content_label.TextSize = 14
-	__content_label.Font = Enum.Font.Gotham
+	__content_label.Font = Enum.Font.GothamBold
 	__content_label.TextXAlignment = Enum.TextXAlignment.Left
 	__content_label.TextYAlignment = Enum.TextYAlignment.Top
 	__content_label.TextWrapped = true
@@ -442,7 +442,7 @@ function Library:init(__title : string?) : Library
 	__title_label.Text = __title or 'ronihub'
 	__title_label.TextColor3 = Color3.fromRGB(255, 255, 255)
 	__title_label.TextSize = 16
-	__title_label.Font = Enum.Font.Gotham
+	__title_label.Font = Enum.Font.GothamBold
 	__title_label.TextXAlignment = Enum.TextXAlignment.Left
 	__title_label.ZIndex = 3
 	__title_label.Parent = __header
@@ -493,7 +493,7 @@ function Library:init(__title : string?) : Library
 	__search_box.TextColor3 = Color3.fromRGB(255, 255, 255)
 	__search_box.PlaceholderColor3 = Color3.fromRGB(120, 120, 120)
 	__search_box.TextSize = 13
-	__search_box.Font = Enum.Font.Gotham
+	__search_box.Font = Enum.Font.GothamBold
 	__search_box.TextXAlignment = Enum.TextXAlignment.Left
 	__search_box.ClearTextOnFocus = false
 	__search_box.ZIndex = 4
@@ -993,7 +993,7 @@ function Library:init(__title : string?) : Library
 		__tab_label.Text = __name
 		__tab_label.TextColor3 = Color3.fromRGB(120, 120, 120)
 		__tab_label.TextSize = 14
-		__tab_label.Font = Enum.Font.GothamMedium
+		__tab_label.Font = Enum.Font.GothamBold
 		__tab_label.TextXAlignment = Enum.TextXAlignment.Left
 		__tab_label.ZIndex = 4
 		__tab_label.Parent = __tab_button
@@ -1150,7 +1150,7 @@ function Library:init(__title : string?) : Library
 			__label.Text = __index.title
 			__label.TextColor3 = Color3.fromRGB(255, 255, 255)
 			__label.TextSize = 15
-			__label.Font = Enum.Font.Gotham
+			__label.Font = Enum.Font.GothamBold
 			__label.TextXAlignment = Enum.TextXAlignment.Left
 			__label.ZIndex = 4
 			__label.Parent = __button_frame
@@ -1232,7 +1232,7 @@ function Library:init(__title : string?) : Library
 			__label.Text = __index.title
 			__label.TextColor3 = Color3.fromRGB(255, 255, 255)
 			__label.TextSize = 16
-			__label.Font = Enum.Font.Gotham
+			__label.Font = Enum.Font.GothamBold
 			__label.TextXAlignment = Enum.TextXAlignment.Left
 			__label.ZIndex = 4
 			__label.Parent = __slider_frame
@@ -1244,7 +1244,7 @@ function Library:init(__title : string?) : Library
 			__value_label.Text = tostring(__value)
 			__value_label.TextColor3 = Color3.fromRGB(120, 120, 120)
 			__value_label.TextSize = 13
-			__value_label.Font = Enum.Font.GothamMedium
+			__value_label.Font = Enum.Font.GothamBold
 			__value_label.TextXAlignment = Enum.TextXAlignment.Right
 			__value_label.ZIndex = 4
 			__value_label.Parent = __slider_frame
@@ -1374,7 +1374,7 @@ function Library:init(__title : string?) : Library
 			__label.Text = __index.title
 			__label.TextColor3 = Color3.fromRGB(255, 255, 255)
 			__label.TextSize = 16
-			__label.Font = Enum.Font.Gotham
+			__label.Font = Enum.Font.GothamBold
 			__label.TextXAlignment = Enum.TextXAlignment.Left
 			__label.ZIndex = 4
 			__label.Parent = __textbox_frame
@@ -1425,7 +1425,7 @@ function Library:init(__title : string?) : Library
 			__textbox.TextColor3 = Color3.fromRGB(255, 255, 255)
 			__textbox.PlaceholderColor3 = Color3.fromRGB(120, 120, 120)
 			__textbox.TextSize = 13
-			__textbox.Font = Enum.Font.Gotham
+			__textbox.Font = Enum.Font.GothamBold
 			__textbox.TextXAlignment = Enum.TextXAlignment.Left
 			__textbox.ClearTextOnFocus = false
 			__textbox.ZIndex = 5
@@ -1479,7 +1479,7 @@ function Library:init(__title : string?) : Library
 			__label.Text = __index.title
 			__label.TextColor3 = Color3.fromRGB(255, 255, 255)
 			__label.TextSize = 15
-			__label.Font = Enum.Font.Gotham
+			__label.Font = Enum.Font.GothamBold
 			__label.TextXAlignment = Enum.TextXAlignment.Left
 			__label.ZIndex = 4
 			__label.Parent = __module_frame
@@ -1689,7 +1689,7 @@ function Library:init(__title : string?) : Library
 				__item_label.Text = __index.title
 				__item_label.TextColor3 = Color3.fromRGB(120, 120, 120)
 				__item_label.TextSize = 13
-				__item_label.Font = Enum.Font.Gotham
+				__item_label.Font = Enum.Font.GothamBold
 				__item_label.TextXAlignment = Enum.TextXAlignment.Left
 				__item_label.ZIndex = 5
 				__item_label.Parent = __item_frame
@@ -1786,7 +1786,7 @@ function Library:init(__title : string?) : Library
 				__label.Text = __index.title
 				__label.TextColor3 = Color3.fromRGB(120, 120, 120)
 				__label.TextSize = 14
-				__label.Font = Enum.Font.Gotham
+				__label.Font = Enum.Font.GothamBold
 				__label.TextXAlignment = Enum.TextXAlignment.Left
 				__label.ZIndex = 5
 				__label.Parent = __item_frame
@@ -1837,7 +1837,7 @@ function Library:init(__title : string?) : Library
 				__textbox.TextColor3 = Color3.fromRGB(255, 255, 255)
 				__textbox.PlaceholderColor3 = Color3.fromRGB(120, 120, 120)
 				__textbox.TextSize = 13
-				__textbox.Font = Enum.Font.Gotham
+				__textbox.Font = Enum.Font.GothamBold
 				__textbox.TextXAlignment = Enum.TextXAlignment.Left
 				__textbox.ClearTextOnFocus = false
 				__textbox.ZIndex = 5
@@ -1894,7 +1894,7 @@ function Library:init(__title : string?) : Library
 				__label.Text = __index.title
 				__label.TextColor3 = Color3.fromRGB(120, 120, 120)
 				__label.TextSize = 14
-				__label.Font = Enum.Font.Gotham
+				__label.Font = Enum.Font.GothamBold
 				__label.TextXAlignment = Enum.TextXAlignment.Left
 				__label.ZIndex = 5
 				__label.Parent = __item_frame
@@ -1906,7 +1906,7 @@ function Library:init(__title : string?) : Library
 				__value_label.Text = tostring(__value)
 				__value_label.TextColor3 = Color3.fromRGB(120, 120, 120)
 				__value_label.TextSize = 11
-				__value_label.Font = Enum.Font.GothamMedium
+				__value_label.Font = Enum.Font.GothamBold
 				__value_label.TextXAlignment = Enum.TextXAlignment.Right
 				__value_label.ZIndex = 5
 				__value_label.Parent = __item_frame
@@ -2049,7 +2049,7 @@ function Library:init(__title : string?) : Library
 				__label.Text = __index.title
 				__label.TextColor3 = Color3.fromRGB(120, 120, 120)
 				__label.TextSize = 13
-				__label.Font = Enum.Font.Gotham
+				__label.Font = Enum.Font.GothamBold
 				__label.TextXAlignment = Enum.TextXAlignment.Left
 				__label.ZIndex = 5
 				__label.Parent = __item_frame
@@ -2116,7 +2116,7 @@ function Library:init(__title : string?) : Library
 				__item_label.Text = __index.title
 				__item_label.TextColor3 = Color3.fromRGB(120, 120, 120)
 				__item_label.TextSize = 13
-				__item_label.Font = Enum.Font.Gotham
+				__item_label.Font = Enum.Font.GothamBold
 				__item_label.TextXAlignment = Enum.TextXAlignment.Left
 				__item_label.ZIndex = 5
 				__item_label.Parent = __item_frame
@@ -2180,7 +2180,7 @@ function Library:init(__title : string?) : Library
 				__selected_label.Text = __get_display_text()
 				__selected_label.TextColor3 = Color3.fromRGB(255, 255, 255)
 				__selected_label.TextSize = 11
-				__selected_label.Font = Enum.Font.Gotham
+				__selected_label.Font = Enum.Font.GothamBold
 				__selected_label.TextXAlignment = Enum.TextXAlignment.Left
 				__selected_label.TextTruncate = Enum.TextTruncate.None
 				__selected_label.ClipsDescendants = true
@@ -2248,7 +2248,7 @@ function Library:init(__title : string?) : Library
 				__dropdown_search.TextColor3 = Color3.fromRGB(255, 255, 255)
 				__dropdown_search.PlaceholderColor3 = Color3.fromRGB(120, 120, 120)
 				__dropdown_search.TextSize = 10
-				__dropdown_search.Font = Enum.Font.Gotham
+				__dropdown_search.Font = Enum.Font.GothamBold
 				__dropdown_search.TextXAlignment = Enum.TextXAlignment.Left
 				__dropdown_search.ClearTextOnFocus = false
 				__dropdown_search.ZIndex = 18
@@ -2382,7 +2382,7 @@ function Library:init(__title : string?) : Library
 					__option_label.Text = __option
 					__option_label.TextColor3 = __is_selected and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(120, 120, 120)
 					__option_label.TextSize = 13
-					__option_label.Font = Enum.Font.GothamMedium
+					__option_label.Font = Enum.Font.GothamBold
 					__option_label.TextXAlignment = Enum.TextXAlignment.Left
 					__option_label.ZIndex = 19
 					__option_label.Parent = __option_button
@@ -2621,7 +2621,7 @@ function Library:init(__title : string?) : Library
 			__label.Text = __index.title
 			__label.TextColor3 = Color3.fromRGB(255, 255, 255)
 			__label.TextSize = 15
-			__label.Font = Enum.Font.Gotham
+			__label.Font = Enum.Font.GothamBold
 			__label.TextXAlignment = Enum.TextXAlignment.Left
 			__label.ZIndex = 4
 			__label.Parent = __checkbox_frame
@@ -2703,7 +2703,7 @@ function Library:init(__title : string?) : Library
 			__label.Text = __index.title
 			__label.TextColor3 = Color3.fromRGB(255, 255, 255)
 			__label.TextSize = 15
-			__label.Font = Enum.Font.Gotham
+			__label.Font = Enum.Font.GothamBold
 			__label.TextXAlignment = Enum.TextXAlignment.Left
 			__label.ZIndex = 11
 			__label.Parent = __dropdown
@@ -2767,7 +2767,7 @@ function Library:init(__title : string?) : Library
 			__selected_label.Text = __get_display_text()
 			__selected_label.TextColor3 = Color3.fromRGB(255, 255, 255)
 			__selected_label.TextSize = 12
-			__selected_label.Font = Enum.Font.Gotham
+			__selected_label.Font = Enum.Font.GothamBold
 			__selected_label.TextXAlignment = Enum.TextXAlignment.Left
 			__selected_label.TextTruncate = Enum.TextTruncate.None
 			__selected_label.ClipsDescendants = true
@@ -2835,7 +2835,7 @@ function Library:init(__title : string?) : Library
 			__dropdown_search.TextColor3 = Color3.fromRGB(255, 255, 255)
 			__dropdown_search.PlaceholderColor3 = Color3.fromRGB(120, 120, 120)
 			__dropdown_search.TextSize = 10
-			__dropdown_search.Font = Enum.Font.Gotham
+			__dropdown_search.Font = Enum.Font.GothamBold
 			__dropdown_search.TextXAlignment = Enum.TextXAlignment.Left
 			__dropdown_search.ClearTextOnFocus = false
 			__dropdown_search.ZIndex = 18
@@ -2963,7 +2963,7 @@ function Library:init(__title : string?) : Library
 				__option_label.Text = __option
 				__option_label.TextColor3 = __is_selected and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(120, 120, 120)
 				__option_label.TextSize = 13
-				__option_label.Font = Enum.Font.GothamMedium
+				__option_label.Font = Enum.Font.GothamBold
 				__option_label.TextXAlignment = Enum.TextXAlignment.Left
 				__option_label.ZIndex = 19
 				__option_label.Parent = __option_button

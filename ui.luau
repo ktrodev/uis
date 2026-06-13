@@ -1,5 +1,5 @@
---- fixed 
-export type Library = { __current_tab: Tab?, __tabs: { Tab }, __all_elements: { { name: string, frame: Frame } }, __window: { main: Frame, euphoria: ScreenGui }, __resize_start: Vector2?, __size_start: UDim2?, __resizing: boolean, __ui_scale: number, __device: string?, __drag_input: InputObject?, __drag_start: Vector2?, __start_pos: UDim2?, __dragging: boolean?, __minimized: boolean, __toggle_keybind: Enum.KeyCode, get_device: (self: Library) -> (), notify: (self: Library, index: { title: string, content: string, duration: number?, notify_type: string }) -> (), get_screen_scale: (self: Library) -> (), mobile_ui_scale: (self: Library) -> (), mobile_controls: (self: Library) -> (), init: (self: Library, title: string?) -> Library, create_tab: (self: Library, name: string, icon: string?) -> Tab, create_tab_section: (self: Library, title: string) -> (), set_toggle_keybind: (self: Library, key: Enum.KeyCode) -> () }
+
+export type Library = { __current_tab: Tab?, __tabs: { Tab }, __all_elements: { { name: string, frame: Frame } }, __window: { main: Frame, euphoria: ScreenGui, keybinds: Frame? }, __resize_start: Vector2?, __size_start: UDim2?, __resizing: boolean, __ui_scale: number, __device: string?, __drag_input: InputObject?, __drag_start: Vector2?, __start_pos: UDim2?, __dragging: boolean?, __minimized: boolean, __toggle_keybind: Enum.KeyCode, __keybinds_list: any, __keybinds_container: Frame?, get_device: (self: Library) -> (), notify: (self: Library, index: { title: string, content: string, duration: number?, notify_type: string }) -> (), get_screen_scale: (self: Library) -> (), mobile_ui_scale: (self: Library) -> (), mobile_controls: (self: Library) -> (), init: (self: Library, title: string?) -> Library, create_tab: (self: Library, name: string, icon: string?) -> Tab, create_tab_section: (self: Library, title: string) -> (), set_toggle_keybind: (self: Library, key: Enum.KeyCode) -> (), create_keybind: (self: Library, name: string, default_key: Enum.KeyCode, default_state: string?, callback: (key: Enum.KeyCode) -> ()) -> (), update_keybind_state: (self: Library, name: string, state: string?) -> () }
 export type Tab = { __library: Library, button: TextButton, container: ScrollingFrame, label: TextLabel, highlight: Frame, outline: UIStroke, highlight_effect: Frame, icon: ImageLabel?, create_button: (self: Tab, index: { title: string, callback: () -> () }) -> (), create_divider: (self: Tab, text: string?) -> (), create_slider: (self: Tab, index: { title: string, minimum: number?, maximum: number?, default: number?, rounding: number?, callback: (value: number) -> () }) -> { Set: (self: any, value: number) -> () }, create_textbox: (self: Tab, index: { title: string, placeholder: string?, callback: (text: string) -> () }) -> { Set: (self: any, text: string) -> () }, create_module: (self: Tab, index: { title: string, default: boolean?, callback: (state: boolean) -> () }) -> Module, create_checkbox: (self: Tab, index: { title: string, default: boolean?, callback: (state: boolean) -> () }) -> (), create_dropdown: (self: Tab, index: { title: string, options: { string }, default: string | { string }?, multi_selection: boolean?, callback: (value: string | { string }) -> () }) -> { Set: (self: any, value: string | { string }) -> () } }
 export type Module = { __elements: { Instance }, __library: Library, create_checkbox: (self: Module, index: { title: string, default: boolean?, callback: (state: boolean) -> () }) -> (), create_divider: (self: Module, text: string?) -> (), create_textbox: (self: Module, index: { title: string, placeholder: string?, callback: (text: string) -> () }) -> { Set: (self: any, text: string) -> () }, create_slider: (self: Module, index: { title: string, minimum: number?, maximum: number?, default: number?, rounding: number?, callback: (value: number) -> () }) -> { Set: (self: any, value: number) -> () }, create_button: (self: Module, index: { title: string, callback: () -> () }) -> (), create_dropdown: (self: Module, index: { title: string, options: { string }, default: string | { string }?, multi_selection: boolean?, callback: (value: string | { string }) -> () }) -> { Set: (self: any, value: string | { string }) -> () } }
 
@@ -36,7 +36,9 @@ local Library : Library = {
 	__dragging = nil,
 
 	__minimized = false,
-	__toggle_keybind = Enum.KeyCode.Insert
+	__toggle_keybind = Enum.KeyCode.Insert,
+	__keybinds_list = {},
+	__keybinds_container = nil
 }
 Library.__index = Library
 
@@ -377,6 +379,96 @@ function Library:init(__title : string?) : Library
 
 	self:get_device()
 	self.__window = {}
+
+	local __keybinds_frame = Instance.new('Frame')
+	__keybinds_frame.Name = 'Keybinds'
+	__keybinds_frame.Size = UDim2.new(0, 200, 0, 40)
+	__keybinds_frame.Position = UDim2.new(0.05, 0, 0.05, 0)
+	__keybinds_frame.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+	__keybinds_frame.BorderSizePixel = 0
+	__keybinds_frame.ZIndex = 10
+	__keybinds_frame.Parent = __euphoria
+	__create_round(__keybinds_frame, 6)
+	__create_outline(__keybinds_frame)
+	self.__window.keybinds = __keybinds_frame
+
+	local __kb_header = Instance.new('Frame')
+	__kb_header.Size = UDim2.new(1, 0, 0, 30)
+	__kb_header.BackgroundTransparency = 1
+	__kb_header.Parent = __keybinds_frame
+	
+	local __kb_icon = Instance.new('ImageLabel')
+	__kb_icon.Size = UDim2.new(0, 16, 0, 16)
+	__kb_icon.Position = UDim2.new(0, 8, 0.5, -8)
+	__kb_icon.BackgroundTransparency = 1
+	__kb_icon.Image = 'rbxassetid://10709791437'
+	__kb_icon.Parent = __kb_header
+
+	local __kb_title = Instance.new('TextLabel')
+	__kb_title.Size = UDim2.new(1, -30, 1, 0)
+	__kb_title.Position = UDim2.new(0, 30, 0, 0)
+	__kb_title.BackgroundTransparency = 1
+	__kb_title.Text = 'Keybinds'
+	__kb_title.TextColor3 = Color3.fromRGB(255, 255, 255)
+	__kb_title.TextSize = 14
+	__kb_title.Font = Enum.Font.GothamBold
+	__kb_title.TextXAlignment = Enum.TextXAlignment.Center
+	__kb_title.Parent = __kb_header
+
+	local __kb_divider = Instance.new('Frame')
+	__kb_divider.Size = UDim2.new(1, 0, 0, 1)
+	__kb_divider.Position = UDim2.new(0, 0, 1, 0)
+	__kb_divider.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+	__kb_divider.BorderSizePixel = 0
+	__kb_divider.Parent = __kb_header
+
+	local __kb_container = Instance.new('Frame')
+	__kb_container.Name = 'KeybindsContainer'
+	__kb_container.Size = UDim2.new(1, 0, 1, -30)
+	__kb_container.Position = UDim2.new(0, 0, 0, 31)
+	__kb_container.BackgroundTransparency = 1
+	__kb_container.Parent = __keybinds_frame
+
+	local __kb_layout = Instance.new('UIListLayout')
+	__kb_layout.SortOrder = Enum.SortOrder.LayoutOrder
+	__kb_layout.Parent = __kb_container
+
+	__kb_layout:GetPropertyChangedSignal('AbsoluteContentSize'):Connect(function()
+		__create_tween(__keybinds_frame, {Size = UDim2.new(0, 200, 0, 31 + __kb_layout.AbsoluteContentSize.Y + 5)}, 0.1)
+	end)
+
+	local __kb_drag_input = nil
+	local __kb_drag_start = nil
+	local __kb_start_pos = nil
+	local __kb_dragging = false
+
+	__kb_header.InputBegan:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			__kb_dragging = true
+			__kb_drag_start = input.Position
+			__kb_start_pos = __keybinds_frame.Position
+			input.Changed:Connect(function()
+				if input.UserInputState == Enum.UserInputState.End then
+					__kb_dragging = false
+				end
+			end)
+		end
+	end)
+
+	__kb_header.InputChanged:Connect(function(input)
+		if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+			__kb_drag_input = input
+		end
+	end)
+
+	UserInputService.InputChanged:Connect(function(input)
+		if input == __kb_drag_input and __kb_dragging then
+			local delta = input.Position - __kb_drag_start
+			__keybinds_frame.Position = UDim2.new(__kb_start_pos.X.Scale, __kb_start_pos.X.Offset + delta.X, __kb_start_pos.Y.Scale, __kb_start_pos.Y.Offset + delta.Y)
+		end
+	end)
+
+	self.__keybinds_container = __kb_container
 
 	local __main : Frame = Instance.new('Frame')
 	__main.Name = 'Main'
@@ -741,6 +833,7 @@ function Library:init(__title : string?) : Library
 				__shrink_tween.Completed:Connect(function()
 					if self.__minimized then
 						__main.Visible = false
+						if self.__keybinds_window then self.__keybinds_window.Visible = false end
 					else
 						__main.ClipsDescendants = false
 					end
@@ -757,6 +850,7 @@ function Library:init(__title : string?) : Library
 			__main.Size = UDim2.new(0, 0, 0, 0)
 			__main.Position = UDim2.new(__original_position.X.Scale, __original_position.X.Offset + (__original_size.X.Offset / 2), __original_position.Y.Scale, __original_position.Y.Offset + (__original_size.Y.Offset / 2))
 			__main.Visible = true
+			if self.__keybinds_window then self.__keybinds_window.Visible = true end
 			__main.BackgroundTransparency = 0.1
 			__main.ClipsDescendants = true
 
@@ -3176,7 +3270,66 @@ local __protect = protectgui or (syn and syn.protect_gui) or function() end
 local __euphoriaGui = game:GetService("CoreGui"):FindFirstChild("Euphoria")
 if __euphoriaGui then __protect(__euphoriaGui) end
 
+	self:create_keybind('Toggle UI', self.__toggle_keybind, nil, function(key)
+		self:set_toggle_keybind(key)
+	end)
+
 	return self
+end
+
+function Library:create_keybind(__name: string, __default_key: Enum.KeyCode, __default_state: string?, __callback: (key: Enum.KeyCode) -> ())
+	local __kb_row = Instance.new('TextButton')
+	__kb_row.Size = UDim2.new(1, 0, 0, 25)
+	__kb_row.BackgroundTransparency = 1
+	__kb_row.Text = ""
+	__kb_row.Parent = self.__keybinds_container
+
+	local __kb_name = Instance.new('TextLabel')
+	__kb_name.Size = UDim2.new(0.5, 0, 1, 0)
+	__kb_name.Position = UDim2.new(0, 10, 0, 0)
+	__kb_name.BackgroundTransparency = 1
+	__kb_name.Text = __name
+	__kb_name.TextColor3 = Color3.fromRGB(200, 200, 200)
+	__kb_name.TextSize = 13
+	__kb_name.Font = Enum.Font.GothamBold
+	__kb_name.TextXAlignment = Enum.TextXAlignment.Left
+	__kb_name.Parent = __kb_row
+
+	local __kb_val = Instance.new('TextLabel')
+	__kb_val.Size = UDim2.new(0.5, -10, 1, 0)
+	__kb_val.Position = UDim2.new(0.5, 0, 0, 0)
+	__kb_val.BackgroundTransparency = 1
+	__kb_val.Text = "[ " .. __default_key.Name .. " ]" .. (__default_state and " [ " .. __default_state .. " ]" or "")
+	__kb_val.TextColor3 = Color3.fromRGB(255, 255, 255)
+	__kb_val.TextSize = 13
+	__kb_val.Font = Enum.Font.GothamBold
+	__kb_val.TextXAlignment = Enum.TextXAlignment.Right
+	__kb_val.Parent = __kb_row
+
+	self.__keybinds_list[__name] = { frame = __kb_row, val = __kb_val, key = __default_key, state = __default_state }
+
+	local __waiting = false
+	__kb_row.MouseButton1Click:Connect(function()
+		__waiting = true
+		__kb_val.Text = "[ ... ]" .. (self.__keybinds_list[__name].state and " [ " .. self.__keybinds_list[__name].state .. " ]" or "")
+	end)
+
+	UserInputService.InputBegan:Connect(function(input, process)
+		if __waiting and input.UserInputType == Enum.UserInputType.Keyboard then
+			__waiting = false
+			self.__keybinds_list[__name].key = input.KeyCode
+			__kb_val.Text = "[ " .. input.KeyCode.Name .. " ]" .. (self.__keybinds_list[__name].state and " [ " .. self.__keybinds_list[__name].state .. " ]" or "")
+			if __callback then __callback(input.KeyCode) end
+		end
+	end)
+end
+
+function Library:update_keybind_state(__name: string, __state: string?)
+	if self.__keybinds_list[__name] then
+		self.__keybinds_list[__name].state = __state
+		local __k = self.__keybinds_list[__name].key.Name
+		self.__keybinds_list[__name].val.Text = "[ " .. __k .. " ]" .. (__state and " [ " .. __state .. " ]" or "")
+	end
 end
 
 return Library

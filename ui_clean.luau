@@ -1,7 +1,7 @@
 
-export type Library = { __current_tab: Tab?, __tabs: { Tab }, __all_elements: { { name: string, frame: Frame } }, __window: { main: Frame, euphoria: ScreenGui, keybinds: Frame? }, __resize_start: Vector2?, __size_start: UDim2?, __resizing: boolean, __ui_scale: number, __device: string?, __drag_input: InputObject?, __drag_start: Vector2?, __start_pos: UDim2?, __dragging: boolean?, __minimized: boolean, __toggle_keybind: Enum.KeyCode, __keybinds_list: any, __keybinds_container: Frame?, get_device: (self: Library) -> (), notify: (self: Library, index: { title: string, content: string, duration: number?, notify_type: string }) -> (), get_screen_scale: (self: Library) -> (), mobile_ui_scale: (self: Library) -> (), mobile_controls: (self: Library) -> (), init: (self: Library, title: string?) -> Library, create_tab: (self: Library, name: string, icon: string?) -> Tab, create_tab_section: (self: Library, title: string) -> (), set_toggle_keybind: (self: Library, key: Enum.KeyCode) -> (), create_keybind: (self: Library, name: string, default_key: Enum.KeyCode, default_state: string?, callback: (key: Enum.KeyCode) -> ()) -> (), update_keybind_state: (self: Library, name: string, state: string?) -> () }
-export type Tab = { __library: Library, button: TextButton, container: ScrollingFrame, label: TextLabel, highlight: Frame, outline: UIStroke, highlight_effect: Frame, icon: ImageLabel?, create_button: (self: Tab, index: { title: string, callback: () -> () }) -> (), create_divider: (self: Tab, text: string?) -> (), create_slider: (self: Tab, index: { title: string, minimum: number?, maximum: number?, default: number?, rounding: number?, callback: (value: number) -> () }) -> { Set: (self: any, value: number) -> () }, create_textbox: (self: Tab, index: { title: string, placeholder: string?, callback: (text: string) -> () }) -> { Set: (self: any, text: string) -> () }, create_module: (self: Tab, index: { title: string, default: boolean?, callback: (state: boolean) -> () }) -> Module, create_checkbox: (self: Tab, index: { title: string, default: boolean?, callback: (state: boolean) -> () }) -> (), create_dropdown: (self: Tab, index: { title: string, options: { string }, default: string | { string }?, multi_selection: boolean?, callback: (value: string | { string }) -> () }) -> { Set: (self: any, value: string | { string }) -> () } }
-export type Module = { __elements: { Instance }, __library: Library, create_checkbox: (self: Module, index: { title: string, default: boolean?, callback: (state: boolean) -> () }) -> (), create_divider: (self: Module, text: string?) -> (), create_textbox: (self: Module, index: { title: string, placeholder: string?, callback: (text: string) -> () }) -> { Set: (self: any, text: string) -> () }, create_slider: (self: Module, index: { title: string, minimum: number?, maximum: number?, default: number?, rounding: number?, callback: (value: number) -> () }) -> { Set: (self: any, value: number) -> () }, create_button: (self: Module, index: { title: string, callback: () -> () }) -> (), create_dropdown: (self: Module, index: { title: string, options: { string }, default: string | { string }?, multi_selection: boolean?, callback: (value: string | { string }) -> () }) -> { Set: (self: any, value: string | { string }) -> () } }
+export type Library = { __current_tab: Tab?, __tabs: { Tab }, __all_elements: { { name: string, frame: Frame, Type: string?, Set: (any) -> ()?} }, __window: { main: Frame, euphoria: ScreenGui, keybinds: Frame? }, __resize_start: Vector2?, __size_start: UDim2?, __resizing: boolean, __ui_scale: number, __device: string?, __drag_input: InputObject?, __drag_start: Vector2?, __start_pos: UDim2?, __dragging: boolean?, __minimized: boolean, __toggle_keybind: Enum.KeyCode, __keybinds_list: any, __keybinds_container: Frame?, __config_data: any, __elements_registry: any, __keybinds_list: any, __keybinds_container: Frame?, get_device: (self: Library) -> (), notify: (self: Library, index: { title: string, content: string, duration: number?, notify_type: string }) -> (), get_screen_scale: (self: Library) -> (), mobile_ui_scale: (self: Library) -> (), mobile_controls: (self: Library) -> (), init: (self: Library, title: string?) -> Library, create_tab: (self: Library, name: string, icon: string?) -> Tab, create_tab_section: (self: Library, title: string) -> (), set_toggle_keybind: (self: Library, key: Enum.KeyCode) -> (), create_keybind: (self: Library, name: string, default_key: Enum.KeyCode, default_state: string?, callback: (key: Enum.KeyCode) -> ()) -> { Set: (self: any, key: Enum.KeyCode) -> () }, update_keybind_state: (self: Library, name: string, state: string?) -> (), save_config: (self: Library, name: string) -> (), load_config: (self: Library, name: string) -> () }
+export type Tab = { __library: Library, button: TextButton, container: ScrollingFrame, label: TextLabel, highlight: Frame, outline: UIStroke, highlight_effect: Frame, icon: ImageLabel?, create_button: (self: Tab, index: { title: string, callback: () -> () }) -> (), create_divider: (self: Tab, text: string?) -> (), create_slider: (self: Tab, index: { title: string, minimum: number?, maximum: number?, default: number?, rounding: number?, callback: (value: number) -> () }) -> { Set: (self: any, value: number) -> () }, create_textbox: (self: Tab, index: { title: string, placeholder: string?, callback: (text: string) -> () }) -> { Set: (self: any, text: string) -> () }, create_module: (self: Tab, index: { title: string, default: boolean?, callback: (state: boolean) -> () }) -> Module, create_checkbox: (self: Tab, index: { title: string, default: boolean?, callback: (state: boolean) -> () }) -> { Set: (self: any, state: boolean) -> () }, create_dropdown: (self: Tab, index: { title: string, options: { string }, default: string | { string }?, multi_selection: boolean?, callback: (value: string | { string }) -> () }) -> { Set: (self: any, value: string | { string }) -> () }, create_config_module: (self: Tab, index: { title: string? }?) -> Module }
+export type Module = { __elements: { Instance }, __library: Library, create_checkbox: (self: Module, index: { title: string, default: boolean?, callback: (state: boolean) -> () }) -> { Set: (self: any, state: boolean) -> () }, create_divider: (self: Module, text: string?) -> (), create_textbox: (self: Module, index: { title: string, placeholder: string?, callback: (text: string) -> () }) -> { Set: (self: any, text: string) -> () }, create_slider: (self: Module, index: { title: string, minimum: number?, maximum: number?, default: number?, rounding: number?, callback: (value: number) -> () }) -> { Set: (self: any, value: number) -> () }, create_button: (self: Module, index: { title: string, callback: () -> () }) -> (), create_dropdown: (self: Module, index: { title: string, options: { string }, default: string | { string }?, multi_selection: boolean?, callback: (value: string | { string }) -> () }) -> { Set: (self: any, value: string | { string }) -> () } }
 
 local Service = setmetatable({} :: any, {
     __index = function(self: any, name: string): Instance
@@ -1439,7 +1439,8 @@ function Library:init(__title : string?) : Library
 			end)
 
 			table.insert(self.__library.__all_elements, {name = __index.title, frame = __slider_frame})
-
+			self.__library.__elements_registry[__index.title] = { Type = 'Slider', Set = __set_value }
+			self.__library.__config_data[__index.title] = __default
 			return {
 				Set = function(__self, __new_value : number)
 					__set_value(__new_value)
@@ -1815,13 +1816,16 @@ function Library:init(__title : string?) : Library
 				__item_button.ZIndex = 6
 				__item_button.Parent = __item_frame
 
-				__item_button.MouseButton1Click:Connect(function()
-					__item_toggled = not __item_toggled
-
+				local function __set_value(__new_state)
+					__item_toggled = __new_state
+					self.__library.__config_data[__index.title] = __item_toggled
 					__create_tween(__item_check_frame, {BackgroundColor3 = __item_toggled and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(25, 25, 25)}, 0.3)
 					__create_tween(__item_check_icon, {ImageTransparency = __item_toggled and 0.2 or 1}, 0.3)
-
 					__item_callback(__item_toggled)
+				end
+
+				__item_button.MouseButton1Click:Connect(function()
+					__set_value(not __item_toggled)
 				end)
 
 				table.insert(__module.__elements, __item_frame)
@@ -1829,6 +1833,9 @@ function Library:init(__title : string?) : Library
 				if __toggled then
 					__update_module_height()
 				end
+				self.__library.__elements_registry[__index.title] = { Type = 'Checkbox', Set = __set_value }
+				self.__library.__config_data[__index.title] = __item_toggled
+				return { Set = __set_value }
 			end
 
 			function __module:create_divider(__text : string?)
@@ -1857,6 +1864,9 @@ function Library:init(__title : string?) : Library
 				if __toggled then
 					__update_module_height()
 				end
+				self.__library.__elements_registry[__index.title] = { Type = 'Checkbox', Set = __set_value }
+				self.__library.__config_data[__index.title] = __item_toggled
+				return { Set = __set_value }
 			end
 
 			function __module:create_textbox(__index : { title: string, placeholder: string?, callback: (text: string) -> () }) : { Set: (self: any, text: string) -> () }
@@ -1950,7 +1960,8 @@ function Library:init(__title : string?) : Library
 				if __toggled then
 					__update_module_height()
 				end
-
+				self.__library.__elements_registry[__index.title] = { Type = 'Slider', Set = __set_value }
+				self.__library.__config_data[__index.title] = __default
 				return {
 					Set = function(__self, __new_text : string)
 						__textbox.Text = __new_text
@@ -2058,6 +2069,7 @@ function Library:init(__title : string?) : Library
 
 				local function __set_value(__new_value : number)
 					__value = math.clamp(__new_value, __min, __max)
+					self.__library.__config_data[__index.title] = __value
 
 					if __rounding > 0 then
 						__value = math.floor(__value / __rounding) * __rounding
@@ -2105,7 +2117,8 @@ function Library:init(__title : string?) : Library
 				if __toggled then
 					__update_module_height()
 				end
-
+				self.__library.__elements_registry[__index.title] = { Type = 'Slider', Set = __set_value }
+				self.__library.__config_data[__index.title] = __default
 				return {
 					Set = function(__self, __new_value : number)
 						__set_value(__new_value)
@@ -2170,6 +2183,9 @@ function Library:init(__title : string?) : Library
 				if __toggled then
 					__update_module_height()
 				end
+				self.__library.__elements_registry[__index.title] = { Type = 'Checkbox', Set = __set_value }
+				self.__library.__config_data[__index.title] = __item_toggled
+				return { Set = __set_value }
 			end
 
 			function __module:create_dropdown(__index : { title: string, options: { string }, default: string | { string }?, multi_selection: boolean?, callback: (value: string | { string }) -> () }) : { Set: (self: any, value: string | { string }) -> () }
@@ -2747,16 +2763,22 @@ function Library:init(__title : string?) : Library
 			__button.ZIndex = 5
 			__button.Parent = __checkbox_frame
 
-			__button.MouseButton1Click:Connect(function()
-				__toggled = not __toggled
-
+			local function __set_value(__new_state)
+				__toggled = __new_state
+				self.__library.__config_data[__index.title] = __toggled
 				__create_tween(__check_frame, {BackgroundColor3 = __toggled and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(25, 25, 25)}, 0.3)
 				__create_tween(__check_icon, {ImageTransparency = __toggled and 0.2 or 1}, 0.3)
-
 				__callback(__toggled)
+			end
+
+			__button.MouseButton1Click:Connect(function()
+				__set_value(not __toggled)
 			end)
 
 			table.insert(self.__library.__all_elements, {name = __index.title, frame = __checkbox_frame})
+			self.__library.__elements_registry[__index.title] = { Type = 'Checkbox', Set = __set_value }
+			self.__library.__config_data[__index.title] = __toggled
+			return { Set = __set_value }
 		end
 
 		function __tab:create_dropdown(__index : { title: string, options: { string }, default: string | { string }?, multi_selection: boolean?, callback: (value: string | { string }) -> () }) : { Set: (self: any, value: string | { string }) -> () }
@@ -3261,6 +3283,37 @@ function Library:init(__title : string?) : Library
 					__callback(__selected)
 				end
 			}
+			self.__library.__elements_registry[__index.title] = { Type = 'Dropdown', Set = __set_value }
+			self.__library.__config_data[__index.title] = __default_value
+		end
+
+		function __tab:create_config_module(__index: { title: string? }?)
+			local __title = (__index and __index.title) or 'Configuration'
+			local __config_module = __tab:create_module({ title = __title })
+
+			__config_module:create_textbox({
+				title = 'Config Name',
+				placeholder = 'Default',
+				callback = function(text)
+					getgenv().CurrentConfigName = text
+				end
+			})
+
+			__config_module:create_button({
+				title = 'Save Config',
+				callback = function()
+					self.__library:save_config(getgenv().CurrentConfigName or 'Default')
+				end
+			})
+
+			__config_module:create_button({
+				title = 'Load Config',
+				callback = function()
+					self.__library:load_config(getgenv().CurrentConfigName or 'Default')
+				end
+			})
+
+			return __config_module
 		end
 
 		return __tab

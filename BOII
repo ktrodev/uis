@@ -1,4 +1,4 @@
-getgenv().GG = getgenv().GG or {}
+getgenv().GG = {}
 GG.SelectedLanguage = GG.SelectedLanguage or "en"
 local SelectedLanguage = GG.SelectedLanguage
 function convertStringToTable(inputString)
@@ -23,17 +23,6 @@ local Players = cloneref(game:GetService('Players'))
 local CoreGui = cloneref(game:GetService('CoreGui'))
 local Debris = cloneref(game:GetService('Debris'))
 local mouse = Players.LocalPlayer:GetMouse()
--- Shared GUI protection: always prefer gethui() so the UI is parented into the
--- protected container. Falls back to protectgui + CoreGui only if gethui is unavailable.
-local _protect_gui = protectgui or (syn and syn.protect_gui) or function() end
-local function parent_protected_gui(gui)
-    if gethui then
-        gui.Parent = gethui()
-    else
-        _protect_gui(gui)
-        gui.Parent = CoreGui
-    end
-end
 local old_Allusive = CoreGui:FindFirstChild('roni')
 if old_Allusive then
     Debris:AddItem(old_Allusive, 0)
@@ -45,8 +34,7 @@ local ConfigFolder = "Allusive"
 if not isfolder(ConfigFolder) then
     makefolder(ConfigFolder)
 end
-local Connections
-Connections = setmetatable({
+local Connections = setmetatable({
     disconnect = function(self, connection)
         if not self[connection] then
             return
@@ -62,9 +50,8 @@ Connections = setmetatable({
             value:Disconnect()
         end
     end
-}, {__index = function(_, key) return Connections[key] end})
-local Util
-Util = setmetatable({
+}, Connections)
+local Util = setmetatable({
     map = function(self: any, value: number, in_minimum: number, in_maximum: number, out_minimum: number, out_maximum: number)
         return (value - in_minimum) * (out_maximum - out_minimum) / (in_maximum - in_minimum) + out_minimum
     end,
@@ -76,7 +63,7 @@ Util = setmetatable({
         local viewport_size_Y = workspace.CurrentCamera.ViewportSize.Y
         return self:map(viewport_size_Y, 0, 2560, 8, 56)
     end
-}, {__index = function(_, key) return Util[key] end})
+}, Util)
 local AcrylicBlur = {}
 AcrylicBlur.__index = AcrylicBlur
 function AcrylicBlur.new(object: GuiObject)
@@ -211,8 +198,7 @@ end
 function AcrylicBlur:change_visiblity(state: boolean)
     self._root.Transparency = state and 0.98 or 1
 end
-local Config
-Config = setmetatable({
+local Config = setmetatable({
     VERSION = 3,
     save = function(self: any, file_name: any, config: any)
         config = config or {}
@@ -266,7 +252,7 @@ Config = setmetatable({
     migrate = function(self: any, data: any, _from_version: any)
         return nil
     end
-}, {__index = function(_, key) return Config[key] end})
+}, Config)
 local Library = {
     _config = Config:load(game.GameId),
     _choosing_keybind = false,
@@ -313,7 +299,7 @@ function Library.new()
         KBTitle.Size = UDim2.new(1, 0, 0, 30)
         KBTitle.Position = UDim2.new(0, 0, 0, -30)
         KBTitle.BackgroundTransparency = 1
-        KBTitle.Text = "\u{2328} Keybinds"
+        KBTitle.Text = "⌨ Keybinds"
         KBTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
         KBTitle.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
         KBTitle.TextSize = 13
@@ -351,32 +337,14 @@ function Library.new()
     end
     return self
 end
-local NotificationGui = Instance.new("ScreenGui")
-NotificationGui.Name = "roni_Notifications"
-NotificationGui.ResetOnSpawn = false
-NotificationGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-NotificationGui.IgnoreGuiInset = true
--- Reuse a dedicated, protected container (gethui() when available) so that
--- re-executing the script doesn't nest the notification GUI inside its old self.
-local old_NotificationGui
-if gethui then
-    old_NotificationGui = gethui():FindFirstChild("roni_Notifications")
-end
-if not old_NotificationGui then
-    old_NotificationGui = CoreGui:FindFirstChild("roni_Notifications")
-end
-if old_NotificationGui then
-    Debris:AddItem(old_NotificationGui, 0)
-end
-parent_protected_gui(NotificationGui)
 local NotificationContainer = Instance.new("Frame")
-NotificationContainer.Name = "NotificationContainer"
+NotificationContainer.Name = "RobloxCoreGuis"
 NotificationContainer.Size = UDim2.new(0, math.min(300, workspace.CurrentCamera.ViewportSize.X - 20), 0, 0)
 NotificationContainer.AnchorPoint = Vector2.new(1, 0)
 NotificationContainer.Position = UDim2.new(1, -10, 0, 10)
 NotificationContainer.BackgroundTransparency = 1
-NotificationContainer.ClipsDescendants = false
-NotificationContainer.Parent = NotificationGui
+NotificationContainer.ClipsDescendants = false;
+NotificationContainer.Parent = game:GetService("CoreGui").RobloxGui:FindFirstChild("RobloxCoreGuis") or Instance.new("ScreenGui", game:GetService("CoreGui").RobloxGui)
 NotificationContainer.AutomaticSize = Enum.AutomaticSize.Y
 local NotificationUIScale = Instance.new("UIScale")
 NotificationUIScale.Parent = NotificationContainer
@@ -552,12 +520,11 @@ function Library:flag_type(flag: any, flag_type: any)
     return typeof(Library._config._flags[flag]) == flag_type
 end
 function Library:remove_table_value(__table: any, table_value: string)
-    -- Iterate backwards so removing an element doesn't shift the remaining
-    -- indices out from under us (which skipped duplicates).
-    for index = #__table, 1, -1 do
-        if __table[index] == table_value then
-            table.remove(__table, index)
+    for index, value in __table do
+        if value ~= table_value then
+            continue
         end
+        table.remove(__table, index)
     end
 end
 function Library:get_keybind_name(flag: any)
@@ -737,6 +704,7 @@ function Library:create_ui()
     if old_Allusive then
         Debris:AddItem(old_Allusive, 0)
     end
+    local protect_gui = protectgui or (syn and syn.protect_gui) or function() end
     local Allusive = Instance.new('ScreenGui')
     Allusive.ResetOnSpawn = false
     Allusive.Name = 'roni'
@@ -744,7 +712,8 @@ function Library:create_ui()
     if RunService:IsStudio() then
         Allusive.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
     else
-        parent_protected_gui(Allusive)
+        protect_gui(Allusive)
+        Allusive.Parent = CoreGui
     end
     local Container = Instance.new('Frame')
     Container.ClipsDescendants = true
@@ -829,6 +798,8 @@ function Library:create_ui()
     Icon.ImageColor3 = Color3.fromRGB(255, 255, 255)
     Icon.ScaleType = Enum.ScaleType.Fit
     Icon.BorderColor3 = Color3.fromRGB(0, 0, 0)
+    Icon.AnchorPoint = Vector2.new(0, 0.5)
+    Icon.Image = 'rbxassetid://107819132007001'
     Icon.BackgroundTransparency = 1
     Icon.Position = UDim2.new(0.02500000037252903, 0, 0.054999999701976776, 0)
     Icon.Name = 'Icon'
@@ -1304,9 +1275,13 @@ function Library:create_ui()
             end
             Library:register_flag(settings.flag, 'boolean')
             if Library:flag_type(settings.flag, 'boolean') then
-                -- Restore the persisted state via change_state so the module body,
-                -- toggle visuals, config and callback all stay in sync.
-                ModuleManager:change_state(Library._config._flags[settings.flag])
+                ModuleManager._state = true
+                if settings.callback then
+                    settings.callback(ModuleManager._state)
+                end
+                Toggle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+                Circle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+                Circle.Position = UDim2.fromScale(0.53, 0.5)
             end
             Header.MouseButton1Click:Connect(function()
                 ModuleManager:change_state(not ModuleManager._state)
@@ -1382,7 +1357,7 @@ function Library:create_ui()
                 if self._size == 0 then
                     self._size = 11
                 end
-                self._size += settings.customScale or (settings.CustomYSize or 50)
+                self._size += settings.customScale or 50 
                 if ModuleManager._state then
                     Module.Size = UDim2.fromOffset(241, 93 + self._size)
                 end
@@ -1390,7 +1365,7 @@ function Library:create_ui()
                 local TextFrame = Instance.new('Frame')
                 TextFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
                 TextFrame.BackgroundTransparency = 0.1
-                TextFrame.Size = UDim2.new(0, 207, 0, settings.CustomYSize or 30)
+                TextFrame.Size = UDim2.new(0, 207, 0, settings.CustomYSize) 
                 TextFrame.BorderSizePixel = 0
                 TextFrame.Name = "Text"
                 TextFrame.AutomaticSize = Enum.AutomaticSize.Y 
@@ -2076,7 +2051,7 @@ function Library:create_ui()
                 else
                     Dropdown.LayoutOrder = settings.OrderValue;
                 end;
-                if settings.multi_dropdown and not Library._config._flags[settings.flag] then
+                if not Library._config._flags[settings.flag] then
                     Library._config._flags[settings.flag] = {};
                 end;
                 local TextLabel = Instance.new('TextLabel')
@@ -2185,28 +2160,60 @@ function Library:create_ui()
                         if not Library._config._flags[settings.flag] then
                             Library._config._flags[settings.flag] = {};
                         end;
-                        local selected = Library._config._flags[settings.flag]
-                        -- Keep the selected list valid: drop any entry that is no
-                        -- longer one of the dropdown's current options.
-                        local valid = {}
+                        local CurrentTargetValue = nil;
+                        if #Library._config._flags[settings.flag] > 0 then
+                            CurrentTargetValue = convertTableToString(Library._config._flags[settings.flag]);
+                        end;
+                        local selected = {}
+                        if CurrentTargetValue then
+                            for value in string.gmatch(CurrentTargetValue, "([^,]+)") do
+                                local trimmedValue = value:match("^%s*(.-)%s*$")  
+                                if trimmedValue ~= "Label" then
+                                    table.insert(selected, trimmedValue)
+                                end
+                            end
+                        else
+                            for value in string.gmatch(CurrentOption.Text, "([^,]+)") do
+                                local trimmedValue = value:match("^%s*(.-)%s*$")  
+                                if trimmedValue ~= "Label" then
+                                    table.insert(selected, trimmedValue)
+                                end
+                            end
+                        end;
+                        local CurrentTextGet = convertStringToTable(CurrentOption.Text);
+                        local optionName = "nil";
+                        if typeof(option) ~= 'string' then
+                            optionName = option.Name;
+                        else
+                            optionName = option;
+                        end;
+                        local found = false
+                        for i, v in pairs(CurrentTextGet) do
+                            if v == optionName then
+                                table.remove(CurrentTextGet, i);
+                                break;
+                            end
+                        end
+                        CurrentOption.Text = table.concat(selected, ", ")
+                        local OptionsChild = {}
                         for _, object in Options:GetChildren() do
                             if object.Name == "Option" then
-                                table.insert(valid, object.Text)
+                                table.insert(OptionsChild, object.Text)
+                                if table.find(selected, object.Text) then
+                                    object.TextTransparency = 0.2
+                                else
+                                    object.TextTransparency = 0.6
+                                end
                             end
                         end
-                        for i = #selected, 1, -1 do
-                            if not table.find(valid, selected[i]) then
-                                table.remove(selected, i)
-                            end
-                        end
-                        -- Render the label and per-option highlight.
-                        CurrentOption.Text = #selected > 0 and convertTableToString(selected) or "None"
-                        for _, object in Options:GetChildren() do
-                            if object.Name == "Option" then
-                                object.TextTransparency = table.find(selected, object.Text) and 0.2 or 0.6
-                            end
-                        end
-                        Library._config._flags[settings.flag] = selected
+                        CurrentTargetValue = convertStringToTable(CurrentOption.Text);
+                        for _, v in CurrentTargetValue do
+                            if not table.find(OptionsChild, v) and table.find(selected, v) then
+                                table.remove(selected, _)
+                            end;
+                        end;
+                        CurrentOption.Text = table.concat(selected, ", ");
+                        Library._config._flags[settings.flag] = convertStringToTable(CurrentOption.Text);
                     else
                         CurrentOption.Text = (typeof(option) == "string" and option) or option.Name
                         for _, object in Options:GetChildren() do
@@ -2269,11 +2276,6 @@ function Library:create_ui()
                 if #settings.options > 0 then
                     DropdownManager._size = 3
                     for index, value in settings.options do
-                        -- Cap visible options BEFORE creating/connecting the
-                        -- instance, otherwise capped options still get built.
-                        if index > settings.maximum_options then
-                            continue
-                        end
                         local Option = Instance.new('TextButton')
                         Option.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
                         Option.Active = false
@@ -2314,16 +2316,16 @@ function Library:create_ui()
                             end
                             DropdownManager:update(value)
                         end)
+                        if index > settings.maximum_options then
+                            continue
+                        end
                         DropdownManager._size += 16
                         Options.Size = UDim2.fromOffset(207, DropdownManager._size)
                     end
                 end
                 function DropdownManager:New(value)
-                    -- Capture LayoutOrder before destroying, otherwise we'd be
-                    -- reading a property of a destroyed instance.
-                    local old_layout_order = Dropdown.LayoutOrder
-                    Dropdown:Destroy()
-                    value.OrderValue = old_layout_order
+                    Dropdown:Destroy();
+                    value.OrderValue = Dropdown.LayoutOrder
                     ModuleManager._multiplier -= CurrentDropSizeState
                     return ModuleManager:create_dropdown(value)
                 end;

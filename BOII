@@ -199,7 +199,7 @@ function AcrylicBlur:change_visiblity(state: boolean)
     self._root.Transparency = state and 0.98 or 1
 end
 local Config = setmetatable({
-    VERSION = 3,
+    VERSION = 4,
     save = function(self: any, file_name: any, config: any)
         config = config or {}
         config._flags = config._flags or {}

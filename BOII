@@ -1,4 +1,4 @@
-getgenv().GG = {}
+ getgenv().GG = {}
 GG.SelectedLanguage = GG.SelectedLanguage or "en"
 local SelectedLanguage = GG.SelectedLanguage
 function convertStringToTable(inputString)

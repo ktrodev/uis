@@ -1137,6 +1137,8 @@ function Library:create_ui()
             Module.BorderSizePixel = 0
             Module.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
             Module.Parent = settings.section
+            Module.LayoutOrder = LayoutOrder
+            LayoutOrder += 1
             local UIListLayout = Instance.new('UIListLayout')
             UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
             UIListLayout.Parent = Module
@@ -2047,16 +2049,14 @@ function Library:create_ui()
                     _state = false,
                     _size = 0
                 }
-                if not settings.Order then
-                    if self._size == 0 then
-                        self._size = 11
-                    end
-                    self._size += 44
-                    if ModuleManager._state then
-                        Module.Size = UDim2.fromOffset(241, 93 + self._size + self._multiplier)
-                    end
-                    Options.Size = UDim2.fromOffset(241, self._size)
+                if self._size == 0 then
+                    self._size = 11
                 end
+                self._size += 44
+                if ModuleManager._state then
+                    Module.Size = UDim2.fromOffset(241, 93 + self._size + self._multiplier)
+                end
+                Options.Size = UDim2.fromOffset(241, self._size)
                 local Dropdown = Instance.new('TextButton')
                 Dropdown.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Regular, Enum.FontStyle.Normal)
                 Dropdown.TextColor3 = Color3.fromRGB(0, 0, 0)
@@ -2256,7 +2256,11 @@ function Library:create_ui()
                         DropdownManager:unfold_settings()
                     end
                     if settings.callback then
-                        settings.callback(option)
+                        if settings.multi_dropdown then
+                            settings.callback(Library._config._flags[settings.flag])
+                        else
+                            settings.callback(option)
+                        end
                     end
                 end
                 local CurrentDropSizeState = 0;
@@ -2359,6 +2363,8 @@ function Library:create_ui()
                 Library:register_flag(settings.flag, settings.multi_dropdown and 'table' or 'string')
                 if Library:flag_type(settings.flag, 'string') then
                     DropdownManager:update(Library._config._flags[settings.flag])
+                elseif Library:flag_type(settings.flag, 'table') then
+                    DropdownManager:update("load")
                 else
                     DropdownManager:update(settings.options[1])
                 end

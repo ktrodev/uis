@@ -23,6 +23,11 @@ local Players = cloneref(game:GetService('Players'))
 local CoreGui = cloneref(game:GetService('CoreGui'))
 local Debris = cloneref(game:GetService('Debris'))
 local mouse = Players.LocalPlayer:GetMouse()
+for _, gui in pairs((gethui and gethui():GetChildren()) or CoreGui:GetChildren()) do
+    if gui:FindFirstChild('RoniSignature') then
+        Debris:AddItem(gui, 0)
+    end
+end
 local old_Allusive = CoreGui:FindFirstChild('roni')
 if old_Allusive then
     Debris:AddItem(old_Allusive, 0)
@@ -63,6 +68,36 @@ end
 Util.get_offset = function(self: any)
     local viewport_size_Y = workspace.CurrentCamera.ViewportSize.Y
     return self:map(viewport_size_Y, 0, 2560, 8, 56)
+end
+Util.random_string = function(self: any)
+    local array = {}
+    for i = 1, math.random(10, 20) do
+        array[i] = string.char(math.random(97, 122))
+    end
+    return table.concat(array)
+end
+Util.is_mouse_over_frame = function(self: any, frame: Frame)
+    local abs_pos, abs_size = frame.AbsolutePosition, frame.AbsoluteSize
+    if mouse.X >= abs_pos.X and mouse.X <= abs_pos.X + abs_size.X and mouse.Y >= abs_pos.Y and mouse.Y <= abs_pos.Y + abs_size.Y then
+        return true
+    end
+    return false
+end
+Util.rounding = function(self: any, num, numDecimalPlaces)
+    local mult = 10^(numDecimalPlaces or 0)
+    return math.floor(num * mult + 0.5) / mult
+end
+Util.new_input = function(self: any, frame: Frame, callback)
+    local btn = Instance.new('TextButton', frame)
+    btn.ZIndex = frame.ZIndex + 10
+    btn.Size = UDim2.fromScale(1, 1)
+    btn.BackgroundTransparency = 1
+    btn.TextTransparency = 1
+    btn.Text = ""
+    if callback then
+        btn.MouseButton1Click:Connect(callback)
+    end
+    return btn
 end
 local AcrylicBlur = {}
 AcrylicBlur.__index = AcrylicBlur
@@ -720,15 +755,18 @@ function Library:create_ui()
     local protect_gui = protect_gui or protectgui or (syn and syn.protect_gui) or function() end
     local Allusive = Instance.new('ScreenGui')
     Allusive.ResetOnSpawn = false
-    Allusive.Name = 'roni'
+    Allusive.Name = Util:random_string()
+    
+    local signature = Instance.new('StringValue')
+    signature.Name = 'RoniSignature'
+    signature.Parent = Allusive
+
     Allusive.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     if RunService:IsStudio() then
         Allusive.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
     else
         protect_gui(Allusive)
         Allusive.Parent = (gethui and gethui()) or CoreGui
-        
-        -- ContentProvider protection
         local hooking = hookfunc or hookfunction
         if hooking then
             pcall(function()

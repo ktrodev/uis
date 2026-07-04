@@ -717,7 +717,7 @@ function Library:create_ui()
     if old_Allusive then
         Debris:AddItem(old_Allusive, 0)
     end
-    local protect_gui = protectgui or (syn and syn.protect_gui) or function() end
+    local protect_gui = protect_gui or protectgui or (syn and syn.protect_gui) or function() end
     local Allusive = Instance.new('ScreenGui')
     Allusive.ResetOnSpawn = false
     Allusive.Name = 'roni'
@@ -726,7 +726,17 @@ function Library:create_ui()
         Allusive.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
     else
         protect_gui(Allusive)
-        Allusive.Parent = CoreGui
+        Allusive.Parent = (gethui and gethui()) or CoreGui
+        
+        -- ContentProvider protection
+        local hooking = hookfunc or hookfunction
+        if hooking then
+            pcall(function()
+                hooking(ContentProvider.PreloadAsync, function(...) return 1 end)
+                hooking(ContentProvider.Preload, function(...) return 2 end)
+                hooking(ContentProvider.GetAssetFetchStatus, function(...) return 3 end)
+            end)
+        end
     end
     local Container = Instance.new('Frame')
     Container.ClipsDescendants = true

@@ -34,36 +34,36 @@ local ConfigFolder = "Allusive"
 if not isfolder(ConfigFolder) then
     makefolder(ConfigFolder)
 end
-local Connections = setmetatable({
-    disconnect = function(self, connection)
-        if not self[connection] then
-            return
-        end
+local Connections = {}
+Connections.disconnect = function(self, connection)
+    if not self[connection] then
+        return
+    end
+    if typeof(self[connection]) == 'RBXScriptConnection' then
         self[connection]:Disconnect()
-        self[connection] = nil
-    end,
-    disconnect_all = function(self)
-        for _, value in self do
-            if typeof(value) == 'function' then
-                continue
-            end
+    end
+    self[connection] = nil
+end
+Connections.disconnect_all = function(self)
+    for key, value in pairs(self) do
+        if typeof(value) == 'RBXScriptConnection' then
             value:Disconnect()
+            self[key] = nil
         end
     end
-}, Connections)
-local Util = setmetatable({
-    map = function(self: any, value: number, in_minimum: number, in_maximum: number, out_minimum: number, out_maximum: number)
-        return (value - in_minimum) * (out_maximum - out_minimum) / (in_maximum - in_minimum) + out_minimum
-    end,
-    viewport_point_to_world = function(self: any, location: any, distance: number)
-        local unit_ray = workspace.CurrentCamera:ScreenPointToRay(location.X, location.Y)
-        return unit_ray.Origin + unit_ray.Direction * distance
-    end,
-    get_offset = function(self: any)
-        local viewport_size_Y = workspace.CurrentCamera.ViewportSize.Y
-        return self:map(viewport_size_Y, 0, 2560, 8, 56)
-    end
-}, Util)
+end
+local Util = {}
+Util.map = function(self: any, value: number, in_minimum: number, in_maximum: number, out_minimum: number, out_maximum: number)
+    return (value - in_minimum) * (out_maximum - out_minimum) / (in_maximum - in_minimum) + out_minimum
+end
+Util.viewport_point_to_world = function(self: any, location: any, distance: number)
+    local unit_ray = workspace.CurrentCamera:ScreenPointToRay(location.X, location.Y)
+    return unit_ray.Origin + unit_ray.Direction * distance
+end
+Util.get_offset = function(self: any)
+    local viewport_size_Y = workspace.CurrentCamera.ViewportSize.Y
+    return self:map(viewport_size_Y, 0, 2560, 8, 56)
+end
 local AcrylicBlur = {}
 AcrylicBlur.__index = AcrylicBlur
 function AcrylicBlur.new(object: GuiObject)
@@ -94,18 +94,7 @@ function AcrylicBlur:create_depth_of_fields()
     depth_of_fields.NearIntensity = 1
     depth_of_fields.Name = 'AcrylicBlur'
     depth_of_fields.Parent = Lighting
-    for _, object in Lighting:GetChildren() do
-        if not object:IsA('DepthOfFieldEffect') then
-            continue
-        end
-        if object == depth_of_fields then
-            continue
-        end
-        Connections[object] = object:GetPropertyChangedSignal('FarIntensity'):Connect(function()
-            object.FarIntensity = 0
-        end)
-        object.FarIntensity = 0
-    end
+    return depth_of_fields
 end
 function AcrylicBlur:create_frame()
     local frame = Instance.new('Frame')
@@ -174,14 +163,25 @@ function AcrylicBlur:render(distance: number)
         local size = self._frame.AbsoluteSize - Vector2.new(offset, offset)
         local position = self._frame.AbsolutePosition + Vector2.new(offset / 2, offset / 2)
         update_positions(size, position)
-        task.spawn(update)
+        update()
     end
-    Connections['cframe_update'] = workspace.CurrentCamera:GetPropertyChangedSignal('CFrame'):Connect(update)
-    Connections['viewport_size_update'] = workspace.CurrentCamera:GetPropertyChangedSignal('ViewportSize'):Connect(update)
-    Connections['field_of_view_update'] = workspace.CurrentCamera:GetPropertyChangedSignal('FieldOfView'):Connect(update)
-    Connections['frame_absolute_position'] = self._frame:GetPropertyChangedSignal('AbsolutePosition'):Connect(on_change)
-    Connections['frame_absolute_size'] = self._frame:GetPropertyChangedSignal('AbsoluteSize'):Connect(on_change)
-    task.spawn(update)
+    local id = tostring(self)
+    local function bind_camera()
+        Connections.disconnect(Connections, 'cframe_update_' .. id)
+        Connections.disconnect(Connections, 'viewport_size_update_' .. id)
+        Connections.disconnect(Connections, 'field_of_view_update_' .. id)
+        Connections['cframe_update_' .. id] = workspace.CurrentCamera:GetPropertyChangedSignal('CFrame'):Connect(update)
+        Connections['viewport_size_update_' .. id] = workspace.CurrentCamera:GetPropertyChangedSignal('ViewportSize'):Connect(update)
+        Connections['field_of_view_update_' .. id] = workspace.CurrentCamera:GetPropertyChangedSignal('FieldOfView'):Connect(update)
+    end
+    Connections['camera_change_' .. id] = workspace:GetPropertyChangedSignal('CurrentCamera'):Connect(function()
+        bind_camera()
+        update()
+    end)
+    bind_camera()
+    Connections['frame_absolute_position_' .. id] = self._frame:GetPropertyChangedSignal('AbsolutePosition'):Connect(on_change)
+    Connections['frame_absolute_size_' .. id] = self._frame:GetPropertyChangedSignal('AbsoluteSize'):Connect(on_change)
+    update()
 end
 function AcrylicBlur:check_quality_level()
     local game_settings = UserSettings().GameSettings
@@ -198,6 +198,21 @@ end
 function AcrylicBlur:change_visiblity(state: boolean)
     self._root.Transparency = state and 0.98 or 1
 end
+local function deep_copy_serialize(tbl)
+    local copy = {}
+    for k, v in pairs(tbl) do
+        if type(v) == 'table' then
+            copy[k] = deep_copy_serialize(v)
+        elseif typeof(v) == 'Color3' then
+            copy[k] = {v.R, v.G, v.B}
+        elseif typeof(v) == 'Vector2' then
+            copy[k] = {v.X, v.Y}
+        else
+            copy[k] = v
+        end
+    end
+    return copy
+end
 local Config = setmetatable({
     VERSION = 4,
     save = function(self: any, file_name: any, config: any)
@@ -207,7 +222,7 @@ local Config = setmetatable({
         config._library = config._library or {}
         config._version = self.VERSION
         local success_save, result = pcall(function()
-            local encoded = HttpService:JSONEncode(config)
+            local encoded = HttpService:JSONEncode(deep_copy_serialize(config))
             writefile(ConfigFolder..'/'..file_name..'.json', encoded)
         end)
         if not success_save then
@@ -229,11 +244,9 @@ local Config = setmetatable({
             return HttpService:JSONDecode(readfile(ConfigFolder..'/'..file_name..'.json'))
         end)
         if not success_load then
-            warn('failed to load config (resetting file):', decoded)
-            self:save(file_name, default_config)
+            warn('failed to load config (corrupt JSON):', decoded)
             result = default_config
         elseif type(decoded) ~= 'table' then
-            self:save(file_name, default_config)
             result = default_config
         else
             result = decoded
@@ -423,8 +436,8 @@ function Library.SendNotification(settings)
     Body.AutomaticSize = Enum.AutomaticSize.Y
     Body.Parent = InnerFrame
     task.spawn(function()
-        wait(0.1)
-        if not InnerFrame.Parent then return end
+        task.wait(0.1)
+        if dismissed or not InnerFrame:IsDescendantOf(game) then return end
         local totalHeight = Title.TextBounds.Y + Body.TextBounds.Y + 15
         InnerFrame.Size = UDim2.new(1, 0, 0, totalHeight)
     end)
@@ -837,31 +850,35 @@ function Library:create_ui()
     UIScale.Parent = Container
     self._container_uiscale = UIScale
     self._ui = Allusive
+    local active_drag_input = nil
     local function on_drag(input: InputObject, process: boolean)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then 
+        if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and not self._dragging then 
             self._dragging = true
             self._drag_start = input.Position
             self._container_position = Container.Position
+            active_drag_input = input
+            if Connections['container_input_ended'] then Connections['container_input_ended']:Disconnect() end
             Connections['container_input_ended'] = input.Changed:Connect(function()
                 if input.UserInputState ~= Enum.UserInputState.End then
                     return
                 end
-                Connections:disconnect('container_input_ended')
+                if Connections['container_input_ended'] then
+                    Connections['container_input_ended']:Disconnect()
+                    Connections['container_input_ended'] = nil
+                end
                 self._dragging = false
+                active_drag_input = nil
             end)
         end
     end
     local function update_drag(input: any)
         local delta = input.Position - self._drag_start
         local position = UDim2.new(self._container_position.X.Scale, self._container_position.X.Offset + delta.X, self._container_position.Y.Scale, self._container_position.Y.Offset + delta.Y)
-        TweenService:Create(Container, TweenInfo.new(0.2), {
-            Position = position
-        }):Play()
+        Container.Position = position
     end
     local function drag(input: InputObject, process: boolean)
-        if not self._dragging then
-            return
-        end
+        if not self._dragging then return end
+        if input.UserInputType == Enum.UserInputType.Touch and input ~= active_drag_input then return end
         if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
             update_drag(input)
         end
@@ -903,7 +920,9 @@ function Library:create_ui()
             end
             table.insert(content, object)
         end
-        ContentProvider:PreloadAsync(content)
+        task.spawn(function()
+            pcall(function() ContentProvider:PreloadAsync(content) end)
+        end)
         self:get_device()
         if self._device == 'Mobile' or self._device == 'Unknown' then
             self:get_screen_scale()
@@ -982,7 +1001,10 @@ function Library:create_ui()
         font_params.Font = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
         font_params.Size = 13
         font_params.Width = 10000
-        local font_size = TextService:GetTextBoundsAsync(font_params)
+        local font_size = Vector2.new(#title * 8, 13)
+        pcall(function()
+            font_size = TextService:GetTextBoundsAsync(font_params)
+        end)
         local first_tab = not Tabs:FindFirstChild('Tab')
         local Tab = Instance.new('TextButton')
         Tab.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Regular, Enum.FontStyle.Normal)
@@ -1294,7 +1316,7 @@ function Library:create_ui()
                 end
                 self._size += settings.customScale or 70
                 if ModuleManager._state then
-                    Module.Size = UDim2.fromOffset(241, 93 + self._size)
+                    Module.Size = UDim2.fromOffset(241, 93 + self._size + self._multiplier)
                 end
                 Options.Size = UDim2.fromOffset(241, self._size)
                 local Paragraph = Instance.new('Frame')
@@ -1319,7 +1341,7 @@ function Library:create_ui()
                 Title.TextXAlignment = Enum.TextXAlignment.Left
                 Title.TextYAlignment = Enum.TextYAlignment.Center
                 Title.TextSize = 12
-                Title.AutomaticSize = Enum.AutomaticSize.XY
+                Title.AutomaticSize = Enum.AutomaticSize.Y
                 Title.Parent = Paragraph
                 local Body = Instance.new('TextLabel')
                 Body.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Regular, Enum.FontStyle.Normal)
@@ -1337,7 +1359,7 @@ function Library:create_ui()
                 Body.TextYAlignment = Enum.TextYAlignment.Top
                 Body.TextSize = 11
                 Body.TextWrapped = true
-                Body.AutomaticSize = Enum.AutomaticSize.XY
+                Body.AutomaticSize = Enum.AutomaticSize.Y
                 Body.Parent = Paragraph
                 Paragraph.MouseEnter:Connect(function()
                     TweenService:Create(Paragraph, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
@@ -1359,7 +1381,7 @@ function Library:create_ui()
                 end
                 self._size += settings.customScale or 50 
                 if ModuleManager._state then
-                    Module.Size = UDim2.fromOffset(241, 93 + self._size)
+                    Module.Size = UDim2.fromOffset(241, 93 + self._size + self._multiplier)
                 end
                 Options.Size = UDim2.fromOffset(241, self._size)
                 local TextFrame = Instance.new('Frame')
@@ -1383,14 +1405,14 @@ function Library:create_ui()
                     Body.RichText = true
                     Body.Text = settings.richtext or "<font color='rgb(255,0,0)'>Allusive</font> user" 
                 end
-                Body.Size = UDim2.new(1, -10, 1, 0)
+                Body.Size = UDim2.new(1, -10, 0, 0)
                 Body.Position = UDim2.new(0, 5, 0, 5)
                 Body.BackgroundTransparency = 1
                 Body.TextXAlignment = Enum.TextXAlignment.Left
                 Body.TextYAlignment = Enum.TextYAlignment.Top
                 Body.TextSize = 10
                 Body.TextWrapped = true
-                Body.AutomaticSize = Enum.AutomaticSize.XY
+                Body.AutomaticSize = Enum.AutomaticSize.Y
                 Body.Parent = TextFrame
                 TextFrame.MouseEnter:Connect(function()
                     TweenService:Create(TextFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
@@ -1420,9 +1442,9 @@ function Library:create_ui()
                 if self._size == 0 then
                     self._size = 11
                 end
-                self._size += 32
+                self._size += 44
                 if ModuleManager._state then
-                    Module.Size = UDim2.fromOffset(241, 93 + self._size)
+                    Module.Size = UDim2.fromOffset(241, 93 + self._size + self._multiplier)
                 end
                 Options.Size = UDim2.fromOffset(241, self._size)
                 local Label = Instance.new('TextLabel')
@@ -1470,7 +1492,9 @@ function Library:create_ui()
                     TextboxManager:update_text(Library._config._flags[settings.flag])
                 end
                 Textbox.FocusLost:Connect(function()
-                    TextboxManager:update_text(Textbox.Text)
+                    if Textbox.Text ~= TextboxManager._text then
+                        TextboxManager:update_text(Textbox.Text)
+                    end
                 end)
                 return TextboxManager
             end   
@@ -1763,6 +1787,7 @@ function Library:create_ui()
                         end
                     end
                 end)
+                if Connections[settings.flag .. "_keypress"] then Connections[settings.flag .. "_keypress"]:Disconnect() end
                 Connections[settings.flag .. "_keypress"] = keyPressConnection
                 return CheckboxManager
             end
@@ -1771,10 +1796,11 @@ function Library:create_ui()
                 if self._size == 0 then
                     self._size = 11
                 end
-                self._size += 27
+                self._size += 28
                 if ModuleManager._state then
-                    Module.Size = UDim2.fromOffset(241, 93 + self._size)
+                    Module.Size = UDim2.fromOffset(241, 93 + self._size + self._multiplier)
                 end
+                Options.Size = UDim2.fromOffset(241, self._size)
                 local dividerHeight = 1
                 local dividerWidth = 207 
                 local OuterFrame = Instance.new('Frame')
@@ -2026,10 +2052,8 @@ function Library:create_ui()
                         self._size = 11
                     end
                     self._size += 44
-                end;
-                if not settings.Order then
                     if ModuleManager._state then
-                        Module.Size = UDim2.fromOffset(241, 93 + self._size)
+                        Module.Size = UDim2.fromOffset(241, 93 + self._size + self._multiplier)
                     end
                     Options.Size = UDim2.fromOffset(241, self._size)
                 end
@@ -2228,6 +2252,9 @@ function Library:create_ui()
                         Library._config._flags[settings.flag] = option
                     end
                     Config:save(game.GameId, Library._config)
+                    if not settings.multi_dropdown and DropdownManager._state then
+                        DropdownManager:unfold_settings()
+                    end
                     if settings.callback then
                         settings.callback(option)
                     end
@@ -2625,6 +2652,7 @@ function Library:create_ui()
         return TabManager
     end
     Connections['library_visiblity'] = UserInputService.InputBegan:Connect(function(input: InputObject, process: boolean)
+        if process then return end
         if input.KeyCode ~= (self._toggle_keybind or Enum.KeyCode.Insert) then
             return
         end
@@ -2660,6 +2688,7 @@ function Library:create_ui()
         local dragging = false
         local dragMoved = false
         local dragStart, startPos
+        local activeInput = nil
         local function clamp_position(pos)
             local viewport = workspace.CurrentCamera.ViewportSize
             local size = MobileToggle.AbsoluteSize
@@ -2673,14 +2702,21 @@ function Library:create_ui()
             return UDim2.new(0, x, 0, y)
         end
         MobileToggle.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and not dragging then
                 dragging = true
                 dragMoved = false
                 dragStart = input.Position
                 startPos = MobileToggle.Position
-                input.Changed:Connect(function()
+                activeInput = input
+                if Connections['mobile_toggle_input_ended'] then Connections['mobile_toggle_input_ended']:Disconnect() end
+                Connections['mobile_toggle_input_ended'] = input.Changed:Connect(function()
                     if input.UserInputState == Enum.UserInputState.End then
                         dragging = false
+                        activeInput = nil
+                        if Connections['mobile_toggle_input_ended'] then
+                            Connections['mobile_toggle_input_ended']:Disconnect()
+                            Connections['mobile_toggle_input_ended'] = nil
+                        end
                         if dragMoved then
                             local clamped = clamp_position(MobileToggle.Position)
                             MobileToggle.Position = clamped
@@ -2695,7 +2731,9 @@ function Library:create_ui()
             end
         end)
         Connections['mobile_toggle_drag'] = UserInputService.InputChanged:Connect(function(input)
-            if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and dragging then
+            if not dragging then return end
+            if input.UserInputType == Enum.UserInputType.Touch and input ~= activeInput then return end
+            if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
                 local delta = input.Position - dragStart
                 if delta.Magnitude >= DRAG_THRESHOLD then
                     dragMoved = true

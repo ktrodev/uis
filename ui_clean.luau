@@ -1,5 +1,4 @@
---- fixed
-
+--- fixed v2
 getgenv().GG = {}
 GG.SelectedLanguage = GG.SelectedLanguage or "en"
 local SelectedLanguage = GG.SelectedLanguage

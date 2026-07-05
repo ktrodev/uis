@@ -1,6 +1,4 @@
---- fixed
-
-getgenv().GG = {}
+ getgenv().GG = {}
 GG.SelectedLanguage = GG.SelectedLanguage or "en"
 local SelectedLanguage = GG.SelectedLanguage
 function convertStringToTable(inputString)
@@ -1690,6 +1688,16 @@ function Library:create_ui()
                 KeybindLabel.TextSize = 11
                 KeybindLabel.FontFace = Theme.font(Enum.FontWeight.SemiBold)
                 KeybindLabel.Parent = KeybindBox
+                local KeybindButton = Instance.new("TextButton")
+                KeybindButton.Name = "KeybindButton"
+                KeybindButton.Size = UDim2.fromScale(1, 1)
+                KeybindButton.BackgroundTransparency = 1
+                KeybindButton.Text = ""
+                KeybindButton.TextTransparency = 1
+                KeybindButton.AutoButtonColor = false
+                KeybindButton.ZIndex = KeybindLabel.ZIndex + 1
+                KeybindButton.Parent = KeybindBox
+                local keybind_hovered = false
                 local keybindLabel
                 local function resize_keybind_box(text)
                     local label_text = text or "..."
@@ -1715,10 +1723,61 @@ function Library:create_ui()
                         end
                     end
                 end
+                local function begin_checkbox_keybind_capture()
+                    if Library._choosing_keybind or not UserInputService.KeyboardEnabled then
+                        return
+                    end
+                    Library._choosing_keybind = true
+                    local previous_keybind = Library:get_keybind_name(settings.flag)
+                    update_keybind_display(nil)
+                    Connections:disconnect("checkbox_keybind_capture_" .. settings.flag)
+                    Connections["checkbox_keybind_capture_" .. settings.flag] = UserInputService.InputBegan:Connect(function(keyInput, processed)
+                        if processed then
+                            return
+                        end
+                        local keybind_string = nil
+                        if keyInput.UserInputType == Enum.UserInputType.Keyboard and keyInput.KeyCode == Enum.KeyCode.Escape then
+                            update_keybind_display(previous_keybind)
+                            Library._choosing_keybind = false
+                            Connections:disconnect("checkbox_keybind_capture_" .. settings.flag)
+                            return
+                        elseif keyInput.UserInputType == Enum.UserInputType.Keyboard then
+                            if keyInput.KeyCode == Enum.KeyCode.Unknown then
+                                return
+                            end
+                            if keyInput.KeyCode ~= Enum.KeyCode.Backspace then
+                                keybind_string = Library:set_keybind(settings.flag, keyInput.KeyCode)
+                            else
+                                Library:clear_keybind(settings.flag)
+                            end
+                        elseif keyInput.UserInputType == Enum.UserInputType.MouseButton2 or keyInput.UserInputType == Enum.UserInputType.MouseButton3 then
+                            Library:clear_keybind(settings.flag)
+                        else
+                            return
+                        end
+                        Config:save(game.GameId, Library._config)
+                        update_keybind_display(keybind_string)
+                        Library._choosing_keybind = false
+                        Connections:disconnect("checkbox_keybind_capture_" .. settings.flag)
+                    end)
+                end
                 if not Library:get_keybind_name(settings.flag) and settings.keybind and settings.keybind ~= "Unknown" then
                     Library:set_keybind(settings.flag, settings.keybind)
                 end
                 update_keybind_display(Library:get_keybind_name(settings.flag))
+                KeybindButton.MouseEnter:Connect(function()
+                    keybind_hovered = true
+                    TweenService:Create(KeybindBox, Motion.hover, {
+                        BackgroundColor3 = Theme.colors.control
+                    }):Play()
+                end)
+                KeybindButton.MouseLeave:Connect(function()
+                    keybind_hovered = false
+                    TweenService:Create(KeybindBox, Motion.hover, {
+                        BackgroundColor3 = Theme.colors.surfaceRaised
+                    }):Play()
+                end)
+                KeybindButton.MouseButton1Click:Connect(begin_checkbox_keybind_capture)
                 local Box = Instance.new("Frame")
                 Box.BorderColor3 = Theme.colors.shadow
                 Box.AnchorPoint = Vector2.new(1, 0.5)
@@ -1850,57 +1909,13 @@ function Library:create_ui()
                     CheckboxManager:change_state(Library._config._flags[settings.flag])
                 end
                 Checkbox.MouseButton1Click:Connect(function()
+                    if keybind_hovered or Library._choosing_keybind then return end
                     CheckboxManager:change_state(not CheckboxManager._state)
                 end)
                 Checkbox.InputBegan:Connect(function(input, gameProcessed)
                     if gameProcessed then return end
                     if input.UserInputType ~= Enum.UserInputType.MouseButton3 then return end
-                    if not UserInputService.KeyboardEnabled then return end
-                    if Library._choosing_keybind then return end
-                    Library._choosing_keybind = true
-                    local previous_keybind = Library:get_keybind_name(settings.flag)
-                    update_keybind_display(nil)
-                    local chooseConnection
-                    chooseConnection = UserInputService.InputBegan:Connect(function(keyInput, processed)
-                        if processed then return end
-                        if keyInput.UserInputType == Enum.UserInputType.Keyboard and keyInput.KeyCode == Enum.KeyCode.Escape then
-                            update_keybind_display(previous_keybind)
-                            chooseConnection:Disconnect()
-                            Library._choosing_keybind = false
-                            return
-                        end
-                        if keyInput.UserInputType == Enum.UserInputType.MouseButton2 or keyInput.UserInputType == Enum.UserInputType.MouseButton3 then
-                            Library:clear_keybind(settings.flag)
-                            Config:save(game.GameId, Library._config)
-                            update_keybind_display(nil)
-                            chooseConnection:Disconnect()
-                            Library._choosing_keybind = false
-                            return
-                        end
-                        if keyInput.UserInputType ~= Enum.UserInputType.Keyboard then return end
-                        if keyInput.KeyCode == Enum.KeyCode.Unknown then return end
-                        if keyInput.KeyCode == Enum.KeyCode.Backspace then
-                            Library:clear_keybind(settings.flag)
-                            Config:save(game.GameId, Library._config)
-                            update_keybind_display(nil)
-                            if Connections[settings.flag .. "_keybind"] then
-                                Connections[settings.flag .. "_keybind"]:Disconnect()
-                                Connections[settings.flag .. "_keybind"] = nil
-                            end
-                            chooseConnection:Disconnect()
-                            Library._choosing_keybind = false
-                            return
-                        end
-                        chooseConnection:Disconnect()
-                        local keybind_string = Library:set_keybind(settings.flag, keyInput.KeyCode)
-                        Config:save(game.GameId, Library._config)
-                        if Connections[settings.flag .. "_keybind"] then
-                            Connections[settings.flag .. "_keybind"]:Disconnect()
-                            Connections[settings.flag .. "_keybind"] = nil
-                        end
-                        Library._choosing_keybind = false
-                        update_keybind_display(keybind_string)
-                    end)
+                    begin_checkbox_keybind_capture()
                 end)
                 local keyPressConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
                     if gameProcessed or Library._choosing_keybind or UserInputService:GetFocusedTextBox() then return end

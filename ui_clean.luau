@@ -1,4 +1,6 @@
- getgenv().GG = {}
+--- fixed
+
+getgenv().GG = {}
 GG.SelectedLanguage = GG.SelectedLanguage or "en"
 local SelectedLanguage = GG.SelectedLanguage
 function convertStringToTable(inputString)
@@ -27,6 +29,7 @@ local Theme = {
     brand = "RONI",
     icon = "rbxassetid://107819132007001",
     arrow = "rbxassetid://84232453189324",
+    show_keybind_list = false,
     colors = {
         background = Color3.fromRGB(10, 10, 10),
         sidebar = Color3.fromRGB(12, 12, 12),
@@ -407,7 +410,7 @@ function Library.new()
         _keybind_entries = {},
     }, Library)
     self:create_ui()
-    if UserInputService.KeyboardEnabled then
+    if Theme.show_keybind_list and UserInputService.KeyboardEnabled then
         local KeybindsWidget = Instance.new("Frame")
         KeybindsWidget.Name = "KeybindsWidget"
         KeybindsWidget.Size = UDim2.fromOffset(176, 30)

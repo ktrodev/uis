@@ -1,4 +1,3 @@
---- fixed v2
 getgenv().GG = {}
 GG.SelectedLanguage = GG.SelectedLanguage or "en"
 local SelectedLanguage = GG.SelectedLanguage
@@ -72,11 +71,30 @@ local Metrics = {
     module_width = 234,
     module_header_height = 78,
     option_width = 202,
+    content_left_gap = 18,
+    content_right_gap = 18,
+    section_gap = 16,
+    module_side_padding = 32,
+    section_side_padding = 12,
     radius_window = 8,
     radius_panel = 7,
     radius_control = 4,
     radius_pill = 999,
 }
+local function refresh_metrics()
+    Metrics.option_width = math.max(160, Metrics.option_width)
+    Metrics.module_width = math.max(Metrics.module_width, Metrics.option_width + Metrics.module_side_padding)
+    Metrics.section_width = math.max(Metrics.section_width, Metrics.module_width + Metrics.section_side_padding)
+    Metrics.section_height = math.max(260, Metrics.section_height)
+    Metrics.window_height = math.max(Metrics.window_height, Metrics.section_height + 40)
+    Metrics.section_height = math.max(Metrics.section_height, Metrics.window_height - 40)
+    Metrics.tab_width = math.min(Metrics.tab_width, Metrics.sidebar_width - 20)
+    Metrics.window_width = math.max(
+        Metrics.window_width,
+        Metrics.sidebar_width + Metrics.content_left_gap + (Metrics.section_width * 2) + Metrics.section_gap + Metrics.content_right_gap
+    )
+end
+refresh_metrics()
 local Motion = {
     hover = TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
     control = TweenInfo.new(0.24, Enum.EasingStyle.Quint, Enum.EasingDirection.Out),
@@ -408,6 +426,7 @@ function Library.new()
         _tab = 0,
         _keybind_entries = {},
     }, Library)
+    refresh_metrics()
     self:create_ui()
     if Theme.show_keybind_list and UserInputService.KeyboardEnabled then
         local KeybindsWidget = Instance.new("Frame")
@@ -1221,7 +1240,7 @@ function Library:create_ui()
         LeftSection.AnchorPoint = Vector2.new(0, 0)
         LeftSection.ScrollBarImageTransparency = 1
         LeftSection.BackgroundTransparency = 1
-        LeftSection.Position = UDim2.fromOffset(Metrics.sidebar_width + 18, 22)
+        LeftSection.Position = UDim2.fromOffset(Metrics.sidebar_width + Metrics.content_left_gap, 22)
         LeftSection.BorderColor3 = Theme.colors.shadow
         LeftSection.BackgroundColor3 = Theme.colors.background
         LeftSection.BorderSizePixel = 0
@@ -1245,7 +1264,7 @@ function Library:create_ui()
         RightSection.AnchorPoint = Vector2.new(0, 0)
         RightSection.ScrollBarImageTransparency = 1
         RightSection.BackgroundTransparency = 1
-        RightSection.Position = UDim2.fromOffset(Metrics.sidebar_width + 18 + Metrics.section_width + 16, 22)
+        RightSection.Position = UDim2.fromOffset(Metrics.sidebar_width + Metrics.content_left_gap + Metrics.section_width + Metrics.section_gap, 22)
         RightSection.BorderColor3 = Theme.colors.shadow
         RightSection.BackgroundColor3 = Theme.colors.background
         RightSection.BorderSizePixel = 0
@@ -1346,6 +1365,7 @@ function Library:create_ui()
             ModuleName.Position = UDim2.fromOffset(14, 19)
             ModuleName.BackgroundTransparency = 1
             ModuleName.TextXAlignment = Enum.TextXAlignment.Left
+            ModuleName.TextTruncate = Enum.TextTruncate.AtEnd
             ModuleName.BorderSizePixel = 0
             ModuleName.BorderColor3 = Theme.colors.shadow
             ModuleName.TextSize = 13
@@ -1362,6 +1382,7 @@ function Library:create_ui()
             Description.Position = UDim2.fromOffset(14, 39)
             Description.BackgroundTransparency = 1
             Description.TextXAlignment = Enum.TextXAlignment.Left
+            Description.TextTruncate = Enum.TextTruncate.AtEnd
             Description.BorderSizePixel = 0
             Description.BorderColor3 = Theme.colors.shadow
             Description.TextSize = 11
@@ -1748,6 +1769,7 @@ function Library:create_ui()
                 TitleLabel.Position = UDim2.new(0, 0, 0.5, 0)
                 TitleLabel.BackgroundTransparency = 1
                 TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+                TitleLabel.TextTruncate = Enum.TextTruncate.AtEnd
                 TitleLabel.Parent = Checkbox
                 local KeybindBox = Instance.new("Frame")
                 KeybindBox.Name = "KeybindBox"
@@ -1797,7 +1819,7 @@ function Library:create_ui()
                         return TextService:GetTextBoundsAsync(font_params)
                     end)
                     local width = success and font_size.X or (#label_text * 6)
-                    KeybindBox.Size = UDim2.fromOffset(math.max(20, width + 10), 20)
+                    KeybindBox.Size = UDim2.fromOffset(math.clamp(width + 10, 20, 62), 20)
                 end
                 local function update_keybind_display(key_name)
                     local label_text = key_name or "..."
@@ -2352,6 +2374,7 @@ function Library:create_ui()
                 CurrentOption.Position = UDim2.new(0.04999988153576851, 0, 0.5, 0)
                 CurrentOption.BackgroundTransparency = 1
                 CurrentOption.TextXAlignment = Enum.TextXAlignment.Left
+                CurrentOption.TextTruncate = Enum.TextTruncate.AtEnd
                 CurrentOption.BorderSizePixel = 0
                 CurrentOption.BorderColor3 = Theme.colors.shadow
                 CurrentOption.TextSize = 11
@@ -2631,6 +2654,7 @@ function Library:create_ui()
                 FeatureButton.Text = "    " .. (settings.title or "Feature")
                 FeatureButton.AutoButtonColor = true
                 FeatureButton.TextXAlignment = Enum.TextXAlignment.Left
+                FeatureButton.TextTruncate = Enum.TextTruncate.AtEnd
                 FeatureButton.TextTransparency = 0
                 FeatureButton.ClipsDescendants = true
                 FeatureButton.Parent = FeatureContainer
@@ -2957,3 +2981,4 @@ function Library:create_ui()
     return self
 end
 return Library
+ 

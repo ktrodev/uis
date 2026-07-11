@@ -1,3 +1,4 @@
+--- fixed 
 getgenv().GG = getgenv().GG or {}
 GG.SelectedLanguage = GG.SelectedLanguage or "en"
 local SelectedLanguage = GG.SelectedLanguage
@@ -348,67 +349,6 @@ function Library.new()
         _keybind_entries = {},
     }, Library)
     self:create_ui()
-    if UserInputService.KeyboardEnabled then
-        local KeybindsWidget = Instance.new("Frame")
-        KeybindsWidget.Name = "KeybindsWidget"
-        KeybindsWidget.Size = UDim2.new(0, 230, 0, 30)
-        KeybindsWidget.Position = UDim2.new(0.05, 0, 0.4, 0)
-        KeybindsWidget.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
-        KeybindsWidget.BackgroundTransparency = 0.2
-        KeybindsWidget.BorderSizePixel = 0
-        KeybindsWidget.AutomaticSize = Enum.AutomaticSize.Y
-        KeybindsWidget.Parent = self._ui
-        local KeybindsUIScale = Instance.new("UIScale")
-        KeybindsUIScale.Parent = KeybindsWidget
-        Library._keybinds_uiscale = KeybindsUIScale
-        local KBCorner = Instance.new("UICorner")
-        KBCorner.CornerRadius = UDim.new(0, 8)
-        KBCorner.Parent = KeybindsWidget
-        local KBStroke = Instance.new("UIStroke")
-        KBStroke.Color = Color3.fromRGB(90, 90, 90)
-        KBStroke.Transparency = 0.7
-        KBStroke.Thickness = 1
-        KBStroke.Parent = KeybindsWidget
-        local KBTitle = Instance.new("TextLabel")
-        KBTitle.Size = UDim2.new(1, 0, 0, 30)
-        KBTitle.Position = UDim2.new(0, 0, 0, -30)
-        KBTitle.BackgroundTransparency = 1
-        KBTitle.Text = "⌨ Keybinds"
-        KBTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
-        KBTitle.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
-        KBTitle.TextSize = 13
-        KBTitle.Parent = KeybindsWidget
-        local KBLayout = Instance.new("UIListLayout")
-        KBLayout.SortOrder = Enum.SortOrder.LayoutOrder
-        KBLayout.Padding = UDim.new(0, 5)
-        KBLayout.Parent = KeybindsWidget
-        local KBPadding = Instance.new("UIPadding")
-        KBPadding.PaddingTop = UDim.new(0, 30)
-        KBPadding.PaddingBottom = UDim.new(0, 10)
-        KBPadding.PaddingLeft = UDim.new(0, 10)
-        KBPadding.PaddingRight = UDim.new(0, 10)
-        KBPadding.Parent = KeybindsWidget
-        local dragToggle, dragStart, startPos
-        KeybindsWidget.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                dragToggle = true
-                dragStart = input.Position
-                startPos = KeybindsWidget.Position
-                input.Changed:Connect(function()
-                    if input.UserInputState == Enum.UserInputState.End then
-                        dragToggle = false
-                    end
-                end)
-            end
-        end)
-        UserInputService.InputChanged:Connect(function(input)
-            if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and dragToggle then
-                local delta = input.Position - dragStart
-                KeybindsWidget.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-            end
-        end)
-        Library._keybinds_widget = KeybindsWidget
-    end
     return self
 end
 local NotificationContainer = Instance.new("Frame")
@@ -1222,7 +1162,7 @@ function Library:create_ui()
                 settings.section = LeftSection
             end
             local Module = Instance.new('Frame')
-            Module.ClipsDescendants = true
+            Module.ClipsDescendants = false
             Module.BorderColor3 = Color3.fromRGB(0, 0, 0)
             Module.BackgroundTransparency = 0.5
             Module.Position = UDim2.new(0.004115226212888956, 0, 0, 0)
@@ -1645,15 +1585,15 @@ function Library:create_ui()
                 KeybindBox.Size = UDim2.fromOffset(20, 20)
                 KeybindBox.Position = UDim2.new(1, -40, 0.5, 0)
                 KeybindBox.AnchorPoint = Vector2.new(1, 0.5)
-                KeybindBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+                KeybindBox.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
                 KeybindBox.BorderSizePixel = 0
                 KeybindBox.Parent = Checkbox
                 KeybindBox.Visible = UserInputService.KeyboardEnabled
                 local KeybindCorner = Instance.new("UICorner")
-                KeybindCorner.CornerRadius = UDim.new(0, 6)
+                KeybindCorner.CornerRadius = UDim.new(0, 4)
                 KeybindCorner.Parent = KeybindBox
                 local KBStroke = Instance.new("UIStroke")
-                KBStroke.Color = Color3.fromRGB(90, 90, 90)
+                KBStroke.Color = Color3.fromRGB(110, 110, 110)
                 KBStroke.Transparency = 0.7
                 KBStroke.Thickness = 1
                 KBStroke.Parent = KeybindBox
@@ -1661,10 +1601,10 @@ function Library:create_ui()
                 KeybindLabel.Name = "KeybindLabel"
                 KeybindLabel.Size = UDim2.new(1, 0, 1, 0)
                 KeybindLabel.BackgroundTransparency = 1
-                KeybindLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+                KeybindLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
                 KeybindLabel.TextScaled = false
                 KeybindLabel.TextSize = 11
-                KeybindLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
+                KeybindLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
                 KeybindLabel.Parent = KeybindBox
                 local KeybindButton = Instance.new("TextButton")
                 KeybindButton.Size = UDim2.new(1, 0, 1, 0)
@@ -1672,7 +1612,6 @@ function Library:create_ui()
                 KeybindButton.TextTransparency = 1
                 KeybindButton.Text = ""
                 KeybindButton.Parent = KeybindBox
-                local keybindLabel
                 local function resize_keybind_box(text)
                     local label_text = text or "..."
                     local font_params = Instance.new("GetTextBoundsParams")
@@ -1690,12 +1629,6 @@ function Library:create_ui()
                     local label_text = key_name or "..."
                     KeybindLabel.Text = label_text
                     resize_keybind_box(label_text)
-                    if keybindLabel then
-                        keybindLabel.Text = "[ " .. label_text .. " ]"
-                        if keybindLabel.Parent then
-                            keybindLabel.Parent.Visible = (label_text ~= "..." and label_text ~= "None" and label_text ~= "")
-                        end
-                    end
                 end
                 local function begin_checkbox_keybind_capture()
                     if Library._choosing_keybind then return end
@@ -1774,60 +1707,9 @@ function Library:create_ui()
                         Position = state and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0),
                         BackgroundColor3 = state and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(200, 200, 200)
                     }):Play()
-                    if Library._keybinds_widget then
-                        local entry = Library._keybinds_widget:FindFirstChild("KB_" .. settings.flag)
-                        if entry and entry:FindFirstChild("State") then
-                            entry.State.Text = state and "[ Enabled ]" or "[ Disabled ]"
-                            entry.State.TextColor3 = state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(100, 100, 100)
-                        end
-                    end
                     Library._config._flags[settings.flag] = self._state
                     Config:save(game.GameId, Library._config)
                     if settings.callback then settings.callback(self._state) end
-                end
-                if Library._keybinds_widget and settings.flag then
-                    local old_entry = Library._keybinds_widget:FindFirstChild("KB_" .. settings.flag)
-                    if old_entry then
-                        old_entry:Destroy()
-                    end
-                    local entry = Instance.new("Frame")
-                    entry.Name = "KB_" .. settings.flag
-                    entry.Size = UDim2.new(1, 0, 0, 20)
-                    entry.BackgroundTransparency = 1
-                    entry.Parent = Library._keybinds_widget
-                    local nameLabel = Instance.new("TextLabel")
-                    nameLabel.Size = UDim2.new(1, -125, 1, 0)
-                    nameLabel.Position = UDim2.new(0, 0, 0, 0)
-                    nameLabel.BackgroundTransparency = 1
-                    nameLabel.Text = settings.title or "Checkbox"
-                    nameLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-                    nameLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                    nameLabel.TextSize = 12
-                    nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-                    nameLabel.Parent = entry
-                    local stateLabel = Instance.new("TextLabel")
-                    stateLabel.Name = "State"
-                    stateLabel.Size = UDim2.new(0, 70, 1, 0)
-                    stateLabel.Position = UDim2.new(1, -70, 0, 0)
-                    stateLabel.BackgroundTransparency = 1
-                    stateLabel.Text = Library._config._flags[settings.flag] and "[ Enabled ]" or "[ Disabled ]"
-                    stateLabel.TextColor3 = Library._config._flags[settings.flag] and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(100, 100, 100)
-                    stateLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                    stateLabel.TextSize = 12
-                    stateLabel.TextXAlignment = Enum.TextXAlignment.Right
-                    stateLabel.Parent = entry
-                    keybindLabel = Instance.new("TextButton")
-                    keybindLabel.Name = "Bind"
-                    keybindLabel.Size = UDim2.new(0, 50, 1, 0)
-                    keybindLabel.Position = UDim2.new(1, -125, 0, 0)
-                    keybindLabel.BackgroundTransparency = 1
-                    keybindLabel.Text = "[ " .. (KeybindLabel.Text) .. " ]"
-                    keybindLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-                    keybindLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
-                    keybindLabel.TextSize = 12
-                    keybindLabel.TextXAlignment = Enum.TextXAlignment.Right
-                    keybindLabel.Parent = entry
-                    keybindLabel.MouseButton1Click:Connect(begin_checkbox_keybind_capture)
                 end
                 Library:register_flag(settings.flag, 'boolean')
                 if Library:flag_type(settings.flag, "boolean") then
@@ -2485,10 +2367,10 @@ function Library:create_ui()
                 RightLayout.SortOrder = Enum.SortOrder.LayoutOrder
                 RightLayout.Parent = RightContainer
                 local KeybindBox = Instance.new("TextLabel")
-                KeybindBox.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+                KeybindBox.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Medium, Enum.FontStyle.Normal)
                 KeybindBox.Size = UDim2.new(0, 20, 0, 20)
-                KeybindBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-                KeybindBox.TextColor3 = Color3.fromRGB(200, 200, 200)
+                KeybindBox.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+                KeybindBox.TextColor3 = Color3.fromRGB(220, 220, 220)
                 KeybindBox.TextSize = 11
                 KeybindBox.BackgroundTransparency = 0
                 KeybindBox.LayoutOrder = 1
@@ -2503,13 +2385,12 @@ function Library:create_ui()
                 KeybindButton.TextTransparency = 1
                 KeybindButton.Parent = KeybindBox
                 local CheckboxCorner = Instance.new("UICorner", KeybindBox)
-                CheckboxCorner.CornerRadius = UDim.new(0, 6)
+                CheckboxCorner.CornerRadius = UDim.new(0, 4)
                 local UIStroke = Instance.new("UIStroke", KeybindBox)
-                UIStroke.Color = Color3.fromRGB(90, 90, 90)
+                UIStroke.Color = Color3.fromRGB(110, 110, 110)
                 UIStroke.Transparency = 0.7
                 UIStroke.Thickness = 1
                 UIStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-                local keybindLabel
                 local function resize_keybind_box(text)
                     local label_text = text or "..."
                     local font_params = Instance.new("GetTextBoundsParams")
@@ -2527,57 +2408,9 @@ function Library:create_ui()
                     local label_text = key_name or "..."
                     KeybindBox.Text = label_text
                     resize_keybind_box(label_text)
-                    if keybindLabel then
-                        keybindLabel.Text = "[ " .. label_text .. " ]"
-                        if keybindLabel.Parent then
-                            keybindLabel.Parent.Visible = (label_text ~= "..." and label_text ~= "None" and label_text ~= "")
-                        end
-                    end
                 end
                 update_keybind_display(Library:get_keybind_name(settings.flag))
-                if Library._keybinds_widget and settings.flag then
-                    local old_entry = Library._keybinds_widget:FindFirstChild("KB_" .. settings.flag)
-                    if old_entry then
-                        old_entry:Destroy()
-                    end
-                    local entry = Instance.new("Frame")
-                    entry.Name = "KB_" .. settings.flag
-                    entry.Size = UDim2.new(1, 0, 0, 20)
-                    entry.BackgroundTransparency = 1
-                    entry.Parent = Library._keybinds_widget
-                    local nameLabel = Instance.new("TextLabel")
-                    nameLabel.Size = UDim2.new(0.5, 0, 1, 0)
-                    nameLabel.Position = UDim2.new(0, 0, 0, 0)
-                    nameLabel.BackgroundTransparency = 1
-                    nameLabel.Text = settings.title or "Feature"
-                    nameLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-                    nameLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                    nameLabel.TextSize = 12
-                    nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-                    nameLabel.Parent = entry
-                    local stateLabel = Instance.new("TextLabel")
-                    stateLabel.Name = "State"
-                    stateLabel.Size = UDim2.new(0.5, 0, 1, 0)
-                    stateLabel.Position = UDim2.new(0.5, 0, 0, 0)
-                    stateLabel.BackgroundTransparency = 1
-                    stateLabel.Text = settings.disablecheck and "[ Action ]" or (checked and "[ Enabled ]" or "[ Disabled ]")
-                    stateLabel.TextColor3 = checked and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(100, 100, 100)
-                    stateLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                    stateLabel.TextSize = 12
-                    stateLabel.TextXAlignment = Enum.TextXAlignment.Right
-                    stateLabel.Parent = entry
-                    keybindLabel = Instance.new("TextButton")
-                    keybindLabel.Name = "Bind"
-                    keybindLabel.Size = UDim2.new(0, 62, 1, 0)
-                    keybindLabel.Position = UDim2.new(0.5, -67, 0, 0)
-                    keybindLabel.BackgroundTransparency = 1
-                    keybindLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-                    keybindLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
-                    keybindLabel.TextSize = 12
-                    keybindLabel.TextXAlignment = Enum.TextXAlignment.Right
-                    keybindLabel.Parent = entry
-                    update_keybind_display(Library:get_keybind_name(settings.flag))
-                end
+
                 local function begin_keybind_capture()
                     if Library._choosing_keybind or not UserInputService.KeyboardEnabled then
                         return
@@ -2616,9 +2449,7 @@ function Library:create_ui()
                         Connections:disconnect("keybind_input_" .. settings.flag)
                     end)
                 end
-                if keybindLabel then
-                    keybindLabel.MouseButton1Click:Connect(begin_keybind_capture)
-                end
+
                 local UseF_Var = nil;
                 if not settings.disablecheck then
                     local Checkbox = Instance.new("TextButton")
@@ -2652,13 +2483,7 @@ function Library:create_ui()
                             Position = checked and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0),
                             BackgroundColor3 = checked and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(200, 200, 200)
                         }):Play()
-                        if Library._keybinds_widget then
-                            local entry = Library._keybinds_widget:FindFirstChild("KB_" .. settings.flag)
-                            if entry and entry:FindFirstChild("State") then
-                                entry.State.Text = checked and "[ Enabled ]" or "[ Disabled ]"
-                                entry.State.TextColor3 = checked and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(100, 100, 100)
-                            end
-                        end
+
                         if settings.callback then
                             settings.callback(checked)
                         end

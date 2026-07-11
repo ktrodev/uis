@@ -1,4 +1,4 @@
- getgenv().GG = getgenv().GG or {}
+getgenv().GG = getgenv().GG or {}
 GG.SelectedLanguage = GG.SelectedLanguage or "en"
 local SelectedLanguage = GG.SelectedLanguage
 local cloneref = cloneref or function(instance)
@@ -101,6 +101,74 @@ Util.new_input = function(self: any, frame: Frame, callback)
         btn.MouseButton1Click:Connect(callback)
     end
     return btn
+end
+local Base64 = {}
+do
+    local chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+    local encode_map = {}
+    local decode_map = {}
+    for i = 1, #chars do
+        local c = chars:sub(i, i)
+        encode_map[i - 1] = c
+        decode_map[c] = i - 1
+    end
+    function Base64.encode(input: string)
+        input = tostring(input or "")
+        local out, len = {}, #input
+        local i = 1
+        local function push(x: number)
+            out[#out + 1] = encode_map[x] or '='
+        end
+        while i <= len do
+            local a = input:byte(i)
+            local b = input:byte(i + 1)
+            local c = input:byte(i + 2)
+            push(bit32.rshift(a, 2))
+            if b then
+                push(bit32.bor(bit32.lshift(bit32.band(a, 3), 4), bit32.rshift(b, 4)))
+                if c then
+                    push(bit32.bor(bit32.lshift(bit32.band(b, 15), 2), bit32.rshift(c, 6)))
+                    push(bit32.band(c, 63))
+                else
+                    push(bit32.lshift(bit32.band(b, 15), 2))
+                    out[#out + 1] = '='
+                end
+            else
+                push(bit32.lshift(bit32.band(a, 3), 4))
+                out[#out + 1] = '='
+                out[#out + 1] = '='
+            end
+            i = i + 3
+        end
+        return table.concat(out)
+    end
+    function Base64.decode(input: string)
+        input = tostring(input or ""):gsub('[^%a%d%+%/%=]', '')
+        local out = {}
+        local i = 1
+        local len = #input
+        local function byte_at(pos: number)
+            local ch = input:sub(pos, pos)
+            if ch == '' or ch == '=' then return nil end
+            return decode_map[ch]
+        end
+        while i <= len do
+            local a = byte_at(i)
+            local b = byte_at(i + 1)
+            local c = byte_at(i + 2)
+            local d = byte_at(i + 3)
+            if not a or not b then break end
+            out[#out + 1] = string.char(bit32.band(bit32.bor(bit32.lshift(a, 2), bit32.rshift(b, 4)), 0xFF))
+            if c then
+                out[#out + 1] = string.char(bit32.band(bit32.bor(bit32.lshift(bit32.band(b, 15), 4), bit32.rshift(c, 2)), 0xFF))
+                if d then
+                    out[#out + 1] = string.char(bit32.band(bit32.bor(bit32.lshift(bit32.band(c, 3), 6), d), 0xFF))
+                end
+            end
+            i = i + 4
+        end
+        return table.concat(out)
+    end
 end
 local AcrylicBlur = {}
 AcrylicBlur.__index = AcrylicBlur
@@ -338,7 +406,9 @@ local Library = {
     _dragging = false,
     _drag_start = nil,
     _container_position = nil,
-    _registered_flags = {}
+    _registered_flags = {},
+    _component_registry = {},
+    _internal_flags = {}
 }
 Library.__index = Library
 function Library.new()
@@ -348,66 +418,6 @@ function Library.new()
         _keybind_entries = {},
     }, Library)
     self:create_ui()
-    if UserInputService.KeyboardEnabled then
-        local KeybindsWidget = Instance.new("Frame")
-        KeybindsWidget.Name = "KeybindsWidget"
-        KeybindsWidget.Size = UDim2.new(0, 230, 0, 30)
-        KeybindsWidget.Position = UDim2.new(0.05, 0, 0.4, 0)
-        KeybindsWidget.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
-        KeybindsWidget.BackgroundTransparency = 0.2
-        KeybindsWidget.BorderSizePixel = 0
-        KeybindsWidget.AutomaticSize = Enum.AutomaticSize.Y
-        KeybindsWidget.Parent = self._ui
-        local KeybindsUIScale = Instance.new("UIScale")
-        KeybindsUIScale.Parent = KeybindsWidget
-        Library._keybinds_uiscale = KeybindsUIScale
-        local KBCorner = Instance.new("UICorner")
-        KBCorner.CornerRadius = UDim.new(0, 8)
-        KBCorner.Parent = KeybindsWidget
-        local KBStroke = Instance.new("UIStroke")
-        KBStroke.Color = Color3.fromRGB(90, 90, 90)
-        KBStroke.Transparency = 0.7
-        KBStroke.Thickness = 1
-        KBStroke.Parent = KeybindsWidget
-        local KBTitle = Instance.new("TextLabel")
-        KBTitle.Size = UDim2.new(1, 0, 0, 30)
-        KBTitle.Position = UDim2.new(0, 0, 0, -30)
-        KBTitle.BackgroundTransparency = 1
-        KBTitle.Text = "⌨ Keybinds"
-        KBTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
-        KBTitle.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
-        KBTitle.TextSize = 13
-        KBTitle.Parent = KeybindsWidget
-        local KBLayout = Instance.new("UIListLayout")
-        KBLayout.SortOrder = Enum.SortOrder.LayoutOrder
-        KBLayout.Padding = UDim.new(0, 5)
-        KBLayout.Parent = KeybindsWidget
-        local KBPadding = Instance.new("UIPadding")
-        KBPadding.PaddingTop = UDim.new(0, 30)
-        KBPadding.PaddingBottom = UDim.new(0, 10)
-        KBPadding.PaddingLeft = UDim.new(0, 10)
-        KBPadding.PaddingRight = UDim.new(0, 10)
-        KBPadding.Parent = KeybindsWidget
-        local dragToggle, dragStart, startPos
-        KeybindsWidget.InputBegan:Connect(function(input)
-            if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-                dragToggle = true
-                dragStart = input.Position
-                startPos = KeybindsWidget.Position
-                input.Changed:Connect(function()
-                    if input.UserInputState == Enum.UserInputState.End then
-                        dragToggle = false
-                    end
-                end)
-            end
-        end)
-        UserInputService.InputChanged:Connect(function(input)
-            if (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) and dragToggle then
-                local delta = input.Position - dragStart
-                KeybindsWidget.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-            end
-        end)
-        Library._keybinds_widget = KeybindsWidget
     end
     return self
 end
@@ -652,6 +662,143 @@ function Library:set_toggle_keybind(key_code: any)
     self._toggle_keybind = key_code
 end
 function Library:load()
+end
+local SHARE_PREFIX = "RONI1"
+function Library:_is_internal_flag(flag: any)
+    return self._internal_flags[flag] == true
+end
+function Library:register_component(flag: any, apply_fn: any)
+    if not flag or type(apply_fn) ~= 'function' then
+        return
+    end
+    self._component_registry[flag] = apply_fn
+end
+function Library:_exportable_flags()
+    local out = {}
+    for flag, value in pairs(self._config._flags or {}) do
+        if not self:_is_internal_flag(flag) then
+            out[flag] = value
+        end
+    end
+    return out
+end
+function Library:encode_share()
+    local payload = HttpService:JSONEncode({
+        v = 1,
+        f = self:_exportable_flags()
+    })
+    return SHARE_PREFIX .. ":" .. Base64.encode(payload)
+end
+function Library:decode_share(code: string)
+    if type(code) ~= "string" then return nil end
+    code = code:match("^%s*(.-)%s*$")
+    local prefix, body = code:match("^(" .. SHARE_PREFIX .. ")%s*:%s*(.+)$")
+    if not prefix or not body then
+        return nil
+    end
+    local success, json = pcall(function()
+        return Base64.decode(body)
+    end)
+    if not success or type(json) ~= "string" then
+        return nil
+    end
+    local ok, decoded = pcall(function()
+        return HttpService:JSONDecode(json)
+    end)
+    if not ok or type(decoded) ~= "table" then
+        return nil
+    end
+    if type(decoded.f) ~= "table" then
+        return nil
+    end
+    return decoded
+end
+function Library:apply_config(flags: any)
+    if type(flags) ~= "table" then return end
+    for flag, value in pairs(flags) do
+        if not self:_is_internal_flag(flag) then
+            self._config._flags[flag] = value
+            local apply_fn = self._component_registry[flag]
+            if apply_fn then
+                local ok = pcall(apply_fn, value)
+                if not ok then
+                    warn('[roni] failed to apply flag live:', tostring(flag))
+                end
+            end
+        end
+    end
+    Config:save(game.GameId, self._config)
+end
+function Library:_named_configs_path()
+    return ConfigFolder .. "/configs_" .. tostring(game.GameId) .. ".json"
+end
+function Library:_read_named_configs()
+    local path = self:_named_configs_path()
+    if not isfile(path) then
+        return {}
+    end
+    local ok, raw = pcall(readfile, path)
+    if not ok or type(raw) ~= "string" or raw == "" then
+        return {}
+    end
+    local decoded_ok, decoded = pcall(function()
+        return HttpService:JSONDecode(raw)
+    end)
+    if not decoded_ok or type(decoded) ~= "table" then
+        return {}
+    end
+    return decoded
+end
+function Library:_write_named_configs(map: any)
+    local path = self:_named_configs_path()
+    local ok = pcall(function()
+        writefile(path, HttpService:JSONEncode(map))
+    end)
+    if not ok then
+        warn('[roni] failed to write named configs')
+    end
+end
+function Library:get_named_config_names()
+    local map = self:_read_named_configs()
+    local names = {}
+    for name in pairs(map) do
+        table.insert(names, name)
+    end
+    table.sort(names, function(a, b) return a:lower() < b:lower() end)
+    return names
+end
+function Library:save_named_config(name: string)
+    if type(name) ~= "string" then return false end
+    name = name:match("^%s*(.-)%s*$")
+    if name == "" then return false end
+    local map = self:_read_named_configs()
+    map[name] = { _flags = self:_exportable_flags() }
+    self:_write_named_configs(map)
+    return true
+end
+function Library:load_named_config(name: string)
+    if type(name) ~= "string" then return false end
+    local map = self:_read_named_configs()
+    local entry = map[name]
+    if type(entry) ~= "table" then return false end
+    self:apply_config(entry._flags)
+    return true
+end
+function Library:delete_named_config(name: string)
+    if type(name) ~= "string" then return false end
+    local map = self:_read_named_configs()
+    if map[name] == nil then return false end
+    map[name] = nil
+    self:_write_named_configs(map)
+    return true
+end
+function Library:set_clipboard(text: string)
+    local fn = setclipboard or toclipboard or (syn and syn.write_clipboard)
+    if fn then
+        pcall(fn, text)
+        return true
+    end
+    return false
 end
 function Library:clear_keybind(flag: any)
     if self._config and self._config._keybinds then
@@ -1031,6 +1178,142 @@ function Library:create_ui()
         }):Play()
         self._acrylic_blur = AcrylicBlur.new(Container)
         self._ui_loaded = true
+        self:create_configs_tab()
+    end
+    function self:create_configs_tab()
+        local CFG_ICON = 'rbxassetid://107819132007001'
+        local NameFlag = 'roni_cfg_name'
+        local CodeFlag = 'roni_cfg_code'
+        local ListFlag = 'roni_cfg_list'
+        for _, flag in ipairs({
+            NameFlag, CodeFlag, ListFlag,
+            'roni_cfg_module',
+            'roni_cfg_save', 'roni_cfg_load', 'roni_cfg_delete',
+            'roni_cfg_export', 'roni_cfg_import'
+        }) do
+            self._internal_flags[flag] = true
+        end
+        local ConfigsTab = self:create_tab('Configs', CFG_ICON)
+        local Module = ConfigsTab:create_module({
+            title = 'Config Manager',
+            description = 'Save, load and share your configs.',
+            flag = 'roni_cfg_module',
+            rich = false
+        })
+        Module:create_textbox({
+            title = 'Config Name',
+            flag = NameFlag,
+            placeholder = 'Enter a name...'
+        })
+        Module:create_feature({
+            title = 'Save Config',
+            flag = 'roni_cfg_save',
+            disablecheck = true,
+            button_callback = function()
+                local name = self._config._flags[NameFlag] or ""
+                name = tostring(name):match("^%s*(.-)%s*$")
+                if name == "" then
+                    self.SendNotification({ title = 'Configs', text = 'Enter a config name first.', type = 'warn', duration = 4 })
+                    return
+                end
+                self:save_named_config(name)
+                local names = self:get_named_config_names()
+                self._cfg_dropdown_mgr = self._cfg_dropdown_mgr:New({
+                    Order = true,
+                    title = 'Your Configs',
+                    flag = ListFlag,
+                    options = names
+                })
+                self.SendNotification({ title = 'Configs', text = 'Saved "' .. name .. '".', type = 'success', duration = 4 })
+            end
+        })
+        self._cfg_dropdown_mgr = Module:create_dropdown({
+            title = 'Your Configs',
+            flag = ListFlag,
+            options = self:get_named_config_names()
+        })
+        Module:create_feature({
+            title = 'Load',
+            flag = 'roni_cfg_load',
+            disablecheck = true,
+            button_callback = function()
+                local name = self._config._flags[ListFlag]
+                if name == nil or name == "" then
+                    self.SendNotification({ title = 'Configs', text = 'Select a config to load.', type = 'warn', duration = 4 })
+                    return
+                end
+                local ok = self:load_named_config(name)
+                if ok then
+                    self.SendNotification({ title = 'Configs', text = 'Loaded "' .. tostring(name) .. '".', type = 'success', duration = 4 })
+                else
+                    self.SendNotification({ title = 'Configs', text = 'Could not load "' .. tostring(name) .. '".', type = 'error', duration = 4 })
+                end
+            end
+        })
+        Module:create_feature({
+            title = 'Delete',
+            flag = 'roni_cfg_delete',
+            disablecheck = true,
+            button_callback = function()
+                local name = self._config._flags[ListFlag]
+                if name == nil or name == "" then
+                    self.SendNotification({ title = 'Configs', text = 'Select a config to delete.', type = 'warn', duration = 4 })
+                    return
+                end
+                self:delete_named_config(name)
+                self._cfg_dropdown_mgr = self._cfg_dropdown_mgr:New({
+                    Order = true,
+                    title = 'Your Configs',
+                    flag = ListFlag,
+                    options = self:get_named_config_names()
+                })
+                self.SendNotification({ title = 'Configs', text = 'Deleted "' .. tostring(name) .. '".', type = 'success', duration = 4 })
+            end
+        })
+        Module:create_divider({ title = 'Share', showtopic = true })
+        Module:create_textbox({
+            title = 'Share Code',
+            flag = CodeFlag,
+            placeholder = 'Paste a share code or export here...'
+        })
+        Module:create_feature({
+            title = 'Export Code',
+            flag = 'roni_cfg_export',
+            disablecheck = true,
+            button_callback = function()
+                local code = self:encode_share()
+                self._config._flags[CodeFlag] = code
+                Config:save(game.GameId, self._config)
+                local copied = self:set_clipboard(code)
+                local msg = 'Code generated (' .. #code .. ' chars).'
+                if copied then
+                    msg = msg .. ' Copied to clipboard.'
+                else
+                    msg = msg .. ' Shown in the Share Code box.'
+                end
+                self.SendNotification({ title = 'Configs', text = msg, type = 'success', duration = 5 })
+            end
+        })
+        Module:create_feature({
+            title = 'Import Code',
+            flag = 'roni_cfg_import',
+            disablecheck = true,
+            button_callback = function()
+                local code = self._config._flags[CodeFlag] or ""
+                code = tostring(code):match("^%s*(.-)%s*$")
+                if code == "" then
+                    self.SendNotification({ title = 'Configs', text = 'Paste a share code first.', type = 'warn', duration = 4 })
+                    return
+                end
+                local decoded = self:decode_share(code)
+                if not decoded or type(decoded.f) ~= "table" then
+                    self.SendNotification({ title = 'Configs', text = 'Invalid share code.', type = 'error', duration = 4 })
+                    return
+                end
+                self:apply_config(decoded.f)
+                self.SendNotification({ title = 'Configs', text = 'Config imported and applied.', type = 'success', duration = 4 })
+            end
+        })
     end
     function self:update_tabs(tab: TextButton)
         for index, object in Tabs:GetChildren() do
@@ -1595,6 +1878,13 @@ function Library:create_ui()
                         TextboxManager:update_text(Textbox.Text)
                     end
                 end)
+                if not Library:_is_internal_flag(settings.flag) then
+                    Library:register_component(settings.flag, function(value)
+                        if type(value) == "string" then
+                            TextboxManager:update_text(value)
+                        end
+                    end)
+                end
                 return TextboxManager
             end   
             function ModuleManager:create_checkbox(settings: any)
@@ -1603,7 +1893,7 @@ function Library:create_ui()
                 if self._size == 0 then
                     self._size = 17
                 end
-                self._size += 20
+                self._size += 23
                 if ModuleManager._state then
                     Module.Size = UDim2.fromOffset(241, 93 + self._size + self._multiplier)
                 end
@@ -1645,7 +1935,7 @@ function Library:create_ui()
                 KeybindBox.Size = UDim2.fromOffset(20, 20)
                 KeybindBox.Position = UDim2.new(1, -40, 0.5, 0)
                 KeybindBox.AnchorPoint = Vector2.new(1, 0.5)
-                KeybindBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+                KeybindBox.BackgroundColor3 = Color3.fromRGB(38, 38, 38)
                 KeybindBox.BorderSizePixel = 0
                 KeybindBox.Parent = Checkbox
                 KeybindBox.Visible = UserInputService.KeyboardEnabled
@@ -1653,9 +1943,10 @@ function Library:create_ui()
                 KeybindCorner.CornerRadius = UDim.new(0, 6)
                 KeybindCorner.Parent = KeybindBox
                 local KBStroke = Instance.new("UIStroke")
-                KBStroke.Color = Color3.fromRGB(90, 90, 90)
-                KBStroke.Transparency = 0.7
+                KBStroke.Color = Color3.fromRGB(70, 70, 70)
+                KBStroke.Transparency = 0.5
                 KBStroke.Thickness = 1
+                KBStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
                 KBStroke.Parent = KeybindBox
                 local KeybindLabel = Instance.new("TextLabel")
                 KeybindLabel.Name = "KeybindLabel"
@@ -1672,6 +1963,22 @@ function Library:create_ui()
                 KeybindButton.TextTransparency = 1
                 KeybindButton.Text = ""
                 KeybindButton.Parent = KeybindBox
+                KeybindButton.MouseEnter:Connect(function()
+                    TweenService:Create(KeybindBox, TweenInfo.new(0.15), {
+                        BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+                    }):Play()
+                    TweenService:Create(KBStroke, TweenInfo.new(0.15), {
+                        Transparency = 0.3
+                    }):Play()
+                end)
+                KeybindButton.MouseLeave:Connect(function()
+                    TweenService:Create(KeybindBox, TweenInfo.new(0.15), {
+                        BackgroundColor3 = Color3.fromRGB(38, 38, 38)
+                    }):Play()
+                    TweenService:Create(KBStroke, TweenInfo.new(0.15), {
+                        Transparency = 0.5
+                    }):Play()
+                end)
                 local keybindLabel
                 local function resize_keybind_box(text)
                     local label_text = text or "..."
@@ -1774,61 +2081,12 @@ function Library:create_ui()
                         Position = state and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0),
                         BackgroundColor3 = state and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(200, 200, 200)
                     }):Play()
-                    if Library._keybinds_widget then
-                        local entry = Library._keybinds_widget:FindFirstChild("KB_" .. settings.flag)
-                        if entry and entry:FindFirstChild("State") then
-                            entry.State.Text = state and "[ Enabled ]" or "[ Disabled ]"
-                            entry.State.TextColor3 = state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(100, 100, 100)
-                        end
-                    end
+
                     Library._config._flags[settings.flag] = self._state
                     Config:save(game.GameId, Library._config)
                     if settings.callback then settings.callback(self._state) end
                 end
-                if Library._keybinds_widget and settings.flag then
-                    local old_entry = Library._keybinds_widget:FindFirstChild("KB_" .. settings.flag)
-                    if old_entry then
-                        old_entry:Destroy()
-                    end
-                    local entry = Instance.new("Frame")
-                    entry.Name = "KB_" .. settings.flag
-                    entry.Size = UDim2.new(1, 0, 0, 20)
-                    entry.BackgroundTransparency = 1
-                    entry.Parent = Library._keybinds_widget
-                    local nameLabel = Instance.new("TextLabel")
-                    nameLabel.Size = UDim2.new(1, -125, 1, 0)
-                    nameLabel.Position = UDim2.new(0, 0, 0, 0)
-                    nameLabel.BackgroundTransparency = 1
-                    nameLabel.Text = settings.title or "Checkbox"
-                    nameLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-                    nameLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                    nameLabel.TextSize = 12
-                    nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-                    nameLabel.Parent = entry
-                    local stateLabel = Instance.new("TextLabel")
-                    stateLabel.Name = "State"
-                    stateLabel.Size = UDim2.new(0, 70, 1, 0)
-                    stateLabel.Position = UDim2.new(1, -70, 0, 0)
-                    stateLabel.BackgroundTransparency = 1
-                    stateLabel.Text = Library._config._flags[settings.flag] and "[ Enabled ]" or "[ Disabled ]"
-                    stateLabel.TextColor3 = Library._config._flags[settings.flag] and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(100, 100, 100)
-                    stateLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                    stateLabel.TextSize = 12
-                    stateLabel.TextXAlignment = Enum.TextXAlignment.Right
-                    stateLabel.Parent = entry
-                    keybindLabel = Instance.new("TextButton")
-                    keybindLabel.Name = "Bind"
-                    keybindLabel.Size = UDim2.new(0, 50, 1, 0)
-                    keybindLabel.Position = UDim2.new(1, -125, 0, 0)
-                    keybindLabel.BackgroundTransparency = 1
-                    keybindLabel.Text = "[ " .. (KeybindLabel.Text) .. " ]"
-                    keybindLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-                    keybindLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
-                    keybindLabel.TextSize = 12
-                    keybindLabel.TextXAlignment = Enum.TextXAlignment.Right
-                    keybindLabel.Parent = entry
-                    keybindLabel.MouseButton1Click:Connect(begin_checkbox_keybind_capture)
-                end
+
                 Library:register_flag(settings.flag, 'boolean')
                 if Library:flag_type(settings.flag, "boolean") then
                     CheckboxManager:change_state(Library._config._flags[settings.flag])
@@ -1851,6 +2109,9 @@ function Library:create_ui()
                 end)
                 if Connections[settings.flag .. "_keypress"] then Connections[settings.flag .. "_keypress"]:Disconnect() end
                 Connections[settings.flag .. "_keypress"] = keyPressConnection
+                Library:register_component(settings.flag, function(value)
+                    CheckboxManager:change_state(value and true or false)
+                end)
                 return CheckboxManager
             end
             function ModuleManager:create_divider(settings: any)
@@ -1858,7 +2119,7 @@ function Library:create_ui()
                 if self._size == 0 then
                     self._size = 17
                 end
-                self._size += 28
+                self._size += 31
                 if ModuleManager._state then
                     Module.Size = UDim2.fromOffset(241, 93 + self._size + self._multiplier)
                 end
@@ -1930,7 +2191,7 @@ function Library:create_ui()
                 if self._size == 0 then
                     self._size = 17
                 end
-                self._size += 27
+                self._size += 30
                 if ModuleManager._state then
                     Module.Size = UDim2.fromOffset(241, 93 + self._size + self._multiplier)
                 end
@@ -2094,6 +2355,11 @@ function Library:create_ui()
                     end
                     SliderManager:input(input)
                 end)
+                Library:register_component(settings.flag, function(value)
+                    if type(value) == "number" then
+                        SliderManager:set_percentage(value)
+                    end
+                end)
                 return SliderManager
             end
             function ModuleManager:create_dropdown(settings: any)
@@ -2124,7 +2390,7 @@ function Library:create_ui()
                 if self._size == 0 then
                     self._size = 17
                 end
-                self._size += 44
+                self._size += 47
                 if ModuleManager._state then
                     Module.Size = UDim2.fromOffset(241, 93 + self._size + self._multiplier)
                 end
@@ -2419,6 +2685,16 @@ function Library:create_ui()
                 Dropdown.MouseButton1Click:Connect(function()
                     DropdownManager:unfold_settings()
                 end)
+                Library:register_component(settings.flag, function(value)
+                    if settings.multi_dropdown then
+                        if type(value) == "table" then
+                            Library._config._flags[settings.flag] = value
+                            DropdownManager:update("load")
+                        end
+                    else
+                        DropdownManager:update(value)
+                    end
+                end)
                 return DropdownManager
             end
             function ModuleManager:create_feature(settings)
@@ -2427,7 +2703,7 @@ function Library:create_ui()
                 if self._size == 0 then
                     self._size = 17
                 end
-                self._size += 28
+                self._size += 31
                 if ModuleManager._state then
                     Module.Size = UDim2.fromOffset(241, 93 + self._size + self._multiplier);
                 end
@@ -2487,7 +2763,7 @@ function Library:create_ui()
                 local KeybindBox = Instance.new("TextLabel")
                 KeybindBox.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Regular, Enum.FontStyle.Normal)
                 KeybindBox.Size = UDim2.new(0, 20, 0, 20)
-                KeybindBox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+                KeybindBox.BackgroundColor3 = Color3.fromRGB(38, 38, 38)
                 KeybindBox.TextColor3 = Color3.fromRGB(200, 200, 200)
                 KeybindBox.TextSize = 11
                 KeybindBox.BackgroundTransparency = 0
@@ -2505,8 +2781,8 @@ function Library:create_ui()
                 local CheckboxCorner = Instance.new("UICorner", KeybindBox)
                 CheckboxCorner.CornerRadius = UDim.new(0, 6)
                 local UIStroke = Instance.new("UIStroke", KeybindBox)
-                UIStroke.Color = Color3.fromRGB(90, 90, 90)
-                UIStroke.Transparency = 0.7
+                UIStroke.Color = Color3.fromRGB(70, 70, 70)
+                UIStroke.Transparency = 0.5
                 UIStroke.Thickness = 1
                 UIStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
                 local keybindLabel
@@ -2535,49 +2811,7 @@ function Library:create_ui()
                     end
                 end
                 update_keybind_display(Library:get_keybind_name(settings.flag))
-                if Library._keybinds_widget and settings.flag then
-                    local old_entry = Library._keybinds_widget:FindFirstChild("KB_" .. settings.flag)
-                    if old_entry then
-                        old_entry:Destroy()
-                    end
-                    local entry = Instance.new("Frame")
-                    entry.Name = "KB_" .. settings.flag
-                    entry.Size = UDim2.new(1, 0, 0, 20)
-                    entry.BackgroundTransparency = 1
-                    entry.Parent = Library._keybinds_widget
-                    local nameLabel = Instance.new("TextLabel")
-                    nameLabel.Size = UDim2.new(0.5, 0, 1, 0)
-                    nameLabel.Position = UDim2.new(0, 0, 0, 0)
-                    nameLabel.BackgroundTransparency = 1
-                    nameLabel.Text = settings.title or "Feature"
-                    nameLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-                    nameLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                    nameLabel.TextSize = 12
-                    nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-                    nameLabel.Parent = entry
-                    local stateLabel = Instance.new("TextLabel")
-                    stateLabel.Name = "State"
-                    stateLabel.Size = UDim2.new(0.5, 0, 1, 0)
-                    stateLabel.Position = UDim2.new(0.5, 0, 0, 0)
-                    stateLabel.BackgroundTransparency = 1
-                    stateLabel.Text = settings.disablecheck and "[ Action ]" or (checked and "[ Enabled ]" or "[ Disabled ]")
-                    stateLabel.TextColor3 = checked and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(100, 100, 100)
-                    stateLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                    stateLabel.TextSize = 12
-                    stateLabel.TextXAlignment = Enum.TextXAlignment.Right
-                    stateLabel.Parent = entry
-                    keybindLabel = Instance.new("TextButton")
-                    keybindLabel.Name = "Bind"
-                    keybindLabel.Size = UDim2.new(0, 62, 1, 0)
-                    keybindLabel.Position = UDim2.new(0.5, -67, 0, 0)
-                    keybindLabel.BackgroundTransparency = 1
-                    keybindLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-                    keybindLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
-                    keybindLabel.TextSize = 12
-                    keybindLabel.TextXAlignment = Enum.TextXAlignment.Right
-                    keybindLabel.Parent = entry
-                    update_keybind_display(Library:get_keybind_name(settings.flag))
-                end
+
                 local function begin_keybind_capture()
                     if Library._choosing_keybind or not UserInputService.KeyboardEnabled then
                         return
@@ -2641,8 +2875,8 @@ function Library:create_ui()
                     local DotCorner = Instance.new("UICorner")
                     DotCorner.CornerRadius = UDim.new(1, 0)
                     DotCorner.Parent = Dot
-                    local function toggleState()
-                        checked = not checked
+                    local function setChecked(state: boolean)
+                        checked = state and true or false
                         Library._config._flags[settings.flag] = checked
                         Config:save(game.GameId, Library._config)
                         TweenService:Create(Checkbox, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
@@ -2652,19 +2886,19 @@ function Library:create_ui()
                             Position = checked and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0),
                             BackgroundColor3 = checked and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(200, 200, 200)
                         }):Play()
-                        if Library._keybinds_widget then
-                            local entry = Library._keybinds_widget:FindFirstChild("KB_" .. settings.flag)
-                            if entry and entry:FindFirstChild("State") then
-                                entry.State.Text = checked and "[ Enabled ]" or "[ Disabled ]"
-                                entry.State.TextColor3 = checked and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(100, 100, 100)
-                            end
-                        end
+
                         if settings.callback then
                             settings.callback(checked)
                         end
                     end
+                    local function toggleState()
+                        setChecked(not checked)
+                    end
                     UseF_Var = toggleState
                     Checkbox.MouseButton1Click:Connect(toggleState)
+                    Library:register_component(settings.flag, function(value)
+                        setChecked(value and true or false)
+                    end)
                 else
                     UseF_Var = function()
                         if settings.button_callback then

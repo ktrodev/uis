@@ -1,3 +1,5 @@
+-- fixed 
+
 getgenv().GG = getgenv().GG or {}
 GG.SelectedLanguage = GG.SelectedLanguage or "en"
 local SelectedLanguage = GG.SelectedLanguage
@@ -418,7 +420,6 @@ function Library.new()
         _keybind_entries = {},
     }, Library)
     self:create_ui()
-    end
     return self
 end
 local NotificationContainer = Instance.new("Frame")

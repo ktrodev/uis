@@ -1,5 +1,3 @@
--- fixed 
-
 getgenv().GG = getgenv().GG or {}
 GG.SelectedLanguage = GG.SelectedLanguage or "en"
 local SelectedLanguage = GG.SelectedLanguage
@@ -104,72 +102,184 @@ Util.new_input = function(self: any, frame: Frame, callback)
     end
     return btn
 end
-local Base64 = {}
+local ShareCodec = {
+    PREFIX = "R2",
+    MAX_CODE_LENGTH = 100000,
+    MAX_RECORDS = 2048,
+}
 do
-    local chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-    local encode_map = {}
-    local decode_map = {}
-    for i = 1, #chars do
-        local c = chars:sub(i, i)
-        encode_map[i - 1] = c
-        decode_map[c] = i - 1
-    end
-    function Base64.encode(input: string)
-        input = tostring(input or "")
-        local out, len = {}, #input
-        local i = 1
-        local function push(x: number)
-            out[#out + 1] = encode_map[x] or '='
+    local BASE36 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+    local FLAG_MODULUS = 2176782336 -- 36 ^ 6; safely exact with the multiplier below.
+
+    function ShareCodec.encode_base36(value: number, minimum_width: number?)
+        if type(value) ~= "number" or value ~= value or value < 0 or value == math.huge then
+            return nil
         end
-        while i <= len do
-            local a = input:byte(i)
-            local b = input:byte(i + 1)
-            local c = input:byte(i + 2)
-            push(bit32.rshift(a, 2))
-            if b then
-                push(bit32.bor(bit32.lshift(bit32.band(a, 3), 4), bit32.rshift(b, 4)))
-                if c then
-                    push(bit32.bor(bit32.lshift(bit32.band(b, 15), 2), bit32.rshift(c, 6)))
-                    push(bit32.band(c, 63))
-                else
-                    push(bit32.lshift(bit32.band(b, 15), 2))
-                    out[#out + 1] = '='
-                end
+        value = math.floor(value)
+        local output = ""
+        repeat
+            local index = (value % 36) + 1
+            output = BASE36:sub(index, index) .. output
+            value = math.floor(value / 36)
+        until value == 0
+        while #output < (minimum_width or 0) do
+            output = "0" .. output
+        end
+        return output
+    end
+
+    function ShareCodec.decode_base36(value: string)
+        if type(value) ~= "string" or value == "" or not value:match("^[0-9A-Z]+$") then
+            return nil
+        end
+        local result = 0
+        for index = 1, #value do
+            local digit = BASE36:find(value:sub(index, index), 1, true)
+            if not digit then
+                return nil
+            end
+            result = result * 36 + digit - 1
+            if result > 9007199254740991 then
+                return nil
+            end
+        end
+        return result
+    end
+
+    function ShareCodec.escape(value: string)
+        value = tostring(value or "")
+        local output = table.create(#value)
+        for index = 1, #value do
+            local byte = value:byte(index)
+            local character = value:sub(index, index)
+            if byte < 32 or byte > 126 or character == "%" or character == "|" or character == "=" or character == "~" then
+                output[#output + 1] = string.format("%%%02X", byte)
             else
-                push(bit32.lshift(bit32.band(a, 3), 4))
-                out[#out + 1] = '='
-                out[#out + 1] = '='
+                output[#output + 1] = character
             end
-            i = i + 3
         end
-        return table.concat(out)
+        return table.concat(output)
     end
-    function Base64.decode(input: string)
-        input = tostring(input or ""):gsub('[^%a%d%+%/%=]', '')
-        local out = {}
-        local i = 1
-        local len = #input
-        local function byte_at(pos: number)
-            local ch = input:sub(pos, pos)
-            if ch == '' or ch == '=' then return nil end
-            return decode_map[ch]
+
+    function ShareCodec.unescape(value: string)
+        if type(value) ~= "string" then
+            return nil, "encoded value is not a string"
         end
-        while i <= len do
-            local a = byte_at(i)
-            local b = byte_at(i + 1)
-            local c = byte_at(i + 2)
-            local d = byte_at(i + 3)
-            if not a or not b then break end
-            out[#out + 1] = string.char(bit32.band(bit32.bor(bit32.lshift(a, 2), bit32.rshift(b, 4)), 0xFF))
-            if c then
-                out[#out + 1] = string.char(bit32.band(bit32.bor(bit32.lshift(bit32.band(b, 15), 4), bit32.rshift(c, 2)), 0xFF))
-                if d then
-                    out[#out + 1] = string.char(bit32.band(bit32.bor(bit32.lshift(bit32.band(c, 3), 6), d), 0xFF))
+        local output = table.create(#value)
+        local index = 1
+        while index <= #value do
+            local character = value:sub(index, index)
+            if character == "%" then
+                local hexadecimal = value:sub(index + 1, index + 2)
+                if #hexadecimal ~= 2 or not hexadecimal:match("^[0-9A-F][0-9A-F]$") then
+                    return nil, "invalid percent escape"
                 end
+                local decoded_byte = tonumber(hexadecimal, 16)
+                local decoded_character = string.char(decoded_byte)
+                if decoded_byte >= 32 and decoded_byte <= 126 and decoded_character ~= "%" and decoded_character ~= "|" and decoded_character ~= "=" and decoded_character ~= "~" then
+                    return nil, "unnecessary percent escape"
+                end
+                output[#output + 1] = decoded_character
+                index += 3
+            else
+                output[#output + 1] = character
+                index += 1
             end
-            i = i + 4
         end
-        return table.concat(out)
+        return table.concat(output)
+    end
+
+    function ShareCodec.checksum(value: string)
+        local a, b = 1, 0
+        for index = 1, #value do
+            a = (a + value:byte(index)) % 65521
+            b = (b + a) % 65521
+        end
+        return b * 65536 + a
+    end
+
+    function ShareCodec.flag_id(flag: string)
+        local hash = 7
+        for index = 1, #flag do
+            hash = (hash * 131 + flag:byte(index)) % FLAG_MODULUS
+        end
+        return ShareCodec.encode_base36(hash, 6)
+    end
+
+    function ShareCodec.encode_value(value: any)
+        local value_type = type(value)
+        if value_type == "boolean" then
+            return value and "b1" or "b0"
+        elseif value_type == "number" then
+            if value ~= value or value == math.huge or value == -math.huge then
+                return nil, "numbers must be finite"
+            end
+            if value % 1 == 0 and math.abs(value) <= 9007199254740991 then
+                local sign = value < 0 and "-" or ""
+                return "i" .. sign .. ShareCodec.encode_base36(math.abs(value))
+            end
+            return "n" .. ShareCodec.escape(string.format("%.17g", value))
+        elseif value_type == "string" then
+            return "s" .. ShareCodec.escape(value)
+        elseif value_type == "table" then
+            local success, encoded = pcall(function()
+                return HttpService:JSONEncode(value)
+            end)
+            if not success then
+                return nil, "table is not JSON serializable"
+            end
+            return "j" .. ShareCodec.escape(encoded)
+        end
+        return nil, "unsupported value type " .. value_type
+    end
+
+    function ShareCodec.decode_value(encoded: string)
+        if type(encoded) ~= "string" or #encoded < 1 then
+            return nil, "missing typed value"
+        end
+        local tag = encoded:sub(1, 1)
+        local payload = encoded:sub(2)
+        if tag == "b" then
+            if payload == "1" then return true end
+            if payload == "0" then return false end
+            return nil, "invalid boolean"
+        elseif tag == "i" then
+            local negative = payload:sub(1, 1) == "-"
+            if negative then payload = payload:sub(2) end
+            if (#payload > 1 and payload:sub(1, 1) == "0") or (negative and payload == "0") then
+                return nil, "non-canonical integer"
+            end
+            local value = ShareCodec.decode_base36(payload)
+            if value == nil then return nil, "invalid integer" end
+            return negative and -value or value
+        elseif tag == "n" then
+            local decoded, decode_error = ShareCodec.unescape(payload)
+            if not decoded then return nil, decode_error end
+            local value = tonumber(decoded)
+            if value == nil or value ~= value or value == math.huge or value == -math.huge then
+                return nil, "invalid decimal"
+            end
+            if value % 1 == 0 and math.abs(value) <= 9007199254740991 then
+                return nil, "integer used decimal encoding"
+            end
+            if "n" .. ShareCodec.escape(string.format("%.17g", value)) ~= encoded then
+                return nil, "non-canonical decimal"
+            end
+            return value
+        elseif tag == "s" then
+            return ShareCodec.unescape(payload)
+        elseif tag == "j" then
+            local decoded, decode_error = ShareCodec.unescape(payload)
+            if not decoded then return nil, decode_error end
+            local success, value = pcall(function()
+                return HttpService:JSONDecode(decoded)
+            end)
+            if not success or type(value) ~= "table" then
+                return nil, "invalid table"
+            end
+            return value
+        end
+        return nil, "unknown value type"
     end
 end
 local AcrylicBlur = {}
@@ -329,74 +439,265 @@ function AcrylicBlur:destroy()
     end
     self._root = nil
 end
-local function deep_copy_serialize(tbl)
+local function deep_copy_serialize(value: any, seen: any?, depth: number?)
+    depth = depth or 0
+    if depth > 32 then
+        error("config nesting is too deep")
+    end
+    local value_type = typeof(value)
+    if value_type == "Color3" then
+        return { __roni_type = "Color3", values = { value.R, value.G, value.B } }
+    elseif value_type == "Vector2" then
+        return { __roni_type = "Vector2", values = { value.X, value.Y } }
+    elseif value_type ~= "table" then
+        if value_type == "number" and (value ~= value or value == math.huge or value == -math.huge) then
+            error("config numbers must be finite")
+        end
+        if value_type == "nil" or value_type == "boolean" or value_type == "number" or value_type == "string" then
+            return value
+        end
+        error("unsupported config value type " .. value_type)
+    end
+
+    seen = seen or {}
+    if seen[value] then
+        error("config tables cannot contain cycles")
+    end
+    seen[value] = true
     local copy = {}
-    for k, v in pairs(tbl) do
-        if type(v) == 'table' then
-            copy[k] = deep_copy_serialize(v)
-        elseif typeof(v) == 'Color3' then
-            copy[k] = {v.R, v.G, v.B}
-        elseif typeof(v) == 'Vector2' then
-            copy[k] = {v.X, v.Y}
-        else
-            copy[k] = v
+    local count = 0
+    for key, child in pairs(value) do
+        count += 1
+        if count > 10000 then
+            error("config table is too large")
+        end
+        local key_type = type(key)
+        if key_type ~= "string" and key_type ~= "number" then
+            error("config table keys must be strings or numbers")
+        end
+        copy[key] = deep_copy_serialize(child, seen, depth + 1)
+    end
+    seen[value] = nil
+    return copy
+end
+
+local function deep_copy_deserialize(value: any, depth: number?)
+    depth = depth or 0
+    if type(value) ~= "table" or depth > 32 then
+        return value
+    end
+    local tagged_values = value.values
+    if value.__roni_type == "Color3" and type(tagged_values) == "table" and type(tagged_values[1]) == "number" and type(tagged_values[2]) == "number" and type(tagged_values[3]) == "number" then
+        return Color3.new(tagged_values[1], tagged_values[2], tagged_values[3])
+    elseif value.__roni_type == "Vector2" and type(tagged_values) == "table" and type(tagged_values[1]) == "number" and type(tagged_values[2]) == "number" then
+        return Vector2.new(tagged_values[1], tagged_values[2])
+    end
+    local copy = {}
+    for key, child in pairs(value) do
+        copy[key] = deep_copy_deserialize(child, depth + 1)
+    end
+    return copy
+end
+
+local Config = {
+    VERSION = 5,
+    SAVE_DELAY = 0.2,
+    _batch_depth = 0,
+    _batch_dirty = false,
+    _last_encoded = {},
+    _pending_encoded = {},
+    _write_generation = {},
+    _nonpersistent_flags = {},
+}
+
+function Config:_path(file_name: any)
+    return ConfigFolder .. "/" .. tostring(file_name) .. ".json"
+end
+
+function Config:_persistable_copy(config: any)
+    local copy = deep_copy_serialize(config or {})
+    copy._version = self.VERSION
+    copy._flags = type(copy._flags) == "table" and copy._flags or {}
+    copy._keybinds = type(copy._keybinds) == "table" and copy._keybinds or {}
+    copy._library = type(copy._library) == "table" and copy._library or {}
+    for flag in pairs(copy._flags) do
+        if type(flag) == "string" and (flag:sub(1, 9) == "roni_cfg_" or self._nonpersistent_flags[flag] == true) then
+            copy._flags[flag] = nil
+        end
+    end
+    for flag in pairs(copy._keybinds) do
+        if type(flag) == "string" and flag:sub(1, 9) == "roni_cfg_" then
+            copy._keybinds[flag] = nil
         end
     end
     return copy
 end
-local Config = setmetatable({
-    VERSION = 4,
-    save = function(self: any, file_name: any, config: any)
-        config = config or {}
-        config._flags = config._flags or {}
-        config._keybinds = config._keybinds or {}
-        config._library = config._library or {}
-        config._version = self.VERSION
-        local success_save, result = pcall(function()
-            local encoded = HttpService:JSONEncode(deep_copy_serialize(config))
-            writefile(ConfigFolder..'/'..file_name..'.json', encoded)
+
+function Config:begin_batch()
+    self._batch_depth += 1
+end
+
+function Config:end_batch(file_name: any, config: any, force: boolean?)
+    if self._batch_depth > 0 then
+        self._batch_depth -= 1
+    end
+    if self._batch_depth > 0 then
+        return true, "queued"
+    end
+    local should_save = self._batch_dirty or force == true
+    self._batch_dirty = false
+    if not should_save then
+        return true, "unchanged"
+    end
+    return self:save(file_name, config, force)
+end
+
+function Config:save(file_name: any, config: any, force: boolean?)
+    config = config or {}
+    config._flags = type(config._flags) == "table" and config._flags or {}
+    config._keybinds = type(config._keybinds) == "table" and config._keybinds or {}
+    config._library = type(config._library) == "table" and config._library or {}
+    config._version = self.VERSION
+    if self._batch_depth > 0 then
+        self._batch_dirty = true
+        return true, "queued"
+    end
+
+    local path = self:_path(file_name)
+    local success_encode, encoded = pcall(function()
+        return HttpService:JSONEncode(self:_persistable_copy(config))
+    end)
+    if not success_encode then
+        warn("failed to encode config", encoded)
+        return false, tostring(encoded)
+    end
+    if force ~= true and (self._last_encoded[path] == encoded or self._pending_encoded[path] == encoded) then
+        return true, "unchanged"
+    end
+    local function write_encoded()
+        local success_save, save_error = pcall(function()
+            writefile(path, encoded)
         end)
         if not success_save then
-            warn('failed to save config', result)
+            warn("failed to save config", save_error)
+            return false, tostring(save_error)
         end
-    end,
-    load = function(self: any, file_name: any, config: any)
-        local default_config = config or {
-            _version = self.VERSION,
-            _flags = {},
-            _keybinds = {},
-            _library = {}
-        }
-        local result
-        local success_load, decoded = pcall(function()
-            if not isfile(ConfigFolder..'/'..file_name..'.json') then
-                return nil
-            end
-            return HttpService:JSONDecode(readfile(ConfigFolder..'/'..file_name..'.json'))
-        end)
-        if not success_load then
-            warn('failed to load config (corrupt JSON):', decoded)
-            result = default_config
-        elseif type(decoded) ~= 'table' then
-            result = default_config
-        else
-            result = decoded
-        end
-        result._flags = (type(result._flags) == 'table') and result._flags or {}
-        result._keybinds = (type(result._keybinds) == 'table') and result._keybinds or {}
-        result._library = (type(result._library) == 'table') and result._library or {}
-        local saved_version = result._version
-        if saved_version ~= self.VERSION then
-            result = self:migrate(result, saved_version) or result
-            result._version = self.VERSION
-            self:save(file_name, result)
-        end
-        return result
-    end,
-    migrate = function(self: any, data: any, _from_version: any)
-        return nil
+        self._last_encoded[path] = encoded
+        return true
     end
-}, Config)
+    self._write_generation[path] = (self._write_generation[path] or 0) + 1
+    local generation = self._write_generation[path]
+    if force ~= true and type(task) == "table" and type(task.delay) == "function" then
+        self._pending_encoded[path] = encoded
+        task.delay(self.SAVE_DELAY, function()
+            if self._write_generation[path] ~= generation then
+                return
+            end
+            self._pending_encoded[path] = nil
+            write_encoded()
+        end)
+        return true, "queued"
+    end
+    self._pending_encoded[path] = nil
+    local success_save, save_error = write_encoded()
+    if not success_save then
+        return false, save_error
+    end
+    return true
+end
+
+function Config:flush(file_name: any)
+    local path = self:_path(file_name)
+    local encoded = self._pending_encoded[path]
+    if not encoded then
+        return true, "unchanged"
+    end
+    self._write_generation[path] = (self._write_generation[path] or 0) + 1
+    self._pending_encoded[path] = nil
+    local success, write_error = pcall(writefile, path, encoded)
+    if not success then
+        warn("failed to flush config", write_error)
+        return false, tostring(write_error)
+    end
+    self._last_encoded[path] = encoded
+    return true
+end
+
+function Config:migrate(data: any, from_version: any)
+    if type(data) ~= "table" then
+        return nil, "invalid config data"
+    end
+    if type(from_version) == "number" and from_version > self.VERSION then
+        return nil, "config was created by a newer version"
+    end
+    data._flags = type(data._flags) == "table" and data._flags or {}
+    data._keybinds = type(data._keybinds) == "table" and data._keybinds or {}
+    data._library = type(data._library) == "table" and data._library or {}
+    for flag, saved in pairs(data._flags) do
+        local legacy_shape = from_version == 4 and type(saved) == "table" and type(saved.checked) == "boolean"
+        if legacy_shape then
+            for key in pairs(saved) do
+                if key ~= "checked" and key ~= "BIND" then
+                    legacy_shape = false
+                    break
+                end
+            end
+        end
+        if legacy_shape then
+            data._flags[flag] = saved.checked
+            if type(saved.BIND) == "string" and saved.BIND ~= "" and saved.BIND ~= "Unknown" then
+                local key_name = saved.BIND:gsub("^Enum%.KeyCode%.", "")
+                if #key_name <= 64 and key_name:match("^[%w_]+$") then
+                    data._keybinds[flag] = "Enum.KeyCode." .. key_name
+                end
+            end
+        end
+    end
+    data._version = self.VERSION
+    return data
+end
+
+function Config:load(file_name: any, default: any?)
+    local default_config = default or {
+        _version = self.VERSION,
+        _flags = {},
+        _keybinds = {},
+        _library = {},
+    }
+    local path = self:_path(file_name)
+    if not isfile(path) then
+        return deep_copy_deserialize(deep_copy_serialize(default_config))
+    end
+    local success_read, raw = pcall(readfile, path)
+    if not success_read or type(raw) ~= "string" then
+        warn("failed to read config", raw)
+        return deep_copy_deserialize(deep_copy_serialize(default_config))
+    end
+    local success_decode, decoded = pcall(function()
+        return HttpService:JSONDecode(raw)
+    end)
+    if not success_decode or type(decoded) ~= "table" then
+        warn("failed to load config (corrupt JSON):", decoded)
+        return deep_copy_deserialize(deep_copy_serialize(default_config))
+    end
+    decoded = deep_copy_deserialize(decoded)
+    decoded._flags = type(decoded._flags) == "table" and decoded._flags or {}
+    decoded._keybinds = type(decoded._keybinds) == "table" and decoded._keybinds or {}
+    decoded._library = type(decoded._library) == "table" and decoded._library or {}
+    local saved_version = decoded._version
+    if saved_version ~= self.VERSION then
+        local migrated, migration_error = self:migrate(decoded, saved_version)
+        if not migrated then
+            warn("failed to migrate config:", migration_error)
+            return deep_copy_deserialize(deep_copy_serialize(default_config))
+        end
+        decoded = migrated
+        self:save(file_name, decoded, true)
+    else
+        self._last_encoded[path] = raw
+    end
+    return decoded
+end
 local Library = {
     _config = Config:load(game.GameId),
     _choosing_keybind = false,
@@ -409,7 +710,12 @@ local Library = {
     _drag_start = nil,
     _container_position = nil,
     _registered_flags = {},
+    _flag_metadata = {},
+    _flag_order = {},
+    _flag_ids = {},
+    _id_flags = {},
     _component_registry = {},
+    _keybind_listeners = {},
     _internal_flags = {}
 }
 Library.__index = Library
@@ -603,16 +909,100 @@ end
 function Library:removed(action: any)
     self._ui.AncestryChanged:Once(action)
 end
-function Library:register_flag(flag: any, expected_type: any)
-    if not flag or not expected_type then
-        return
+function Library:values_equal(left: any, right: any, seen: any?)
+    if left == right then
+        return true
     end
-    self._registered_flags[flag] = expected_type
+    if typeof(left) ~= typeof(right) or type(left) ~= "table" then
+        return false
+    end
+    seen = seen or {}
+    if seen[left] == right then
+        return true
+    end
+    seen[left] = right
+    local count = 0
+    for key, value in pairs(left) do
+        count += 1
+        if not self:values_equal(value, right[key], seen) then
+            return false
+        end
+    end
+    local right_count = 0
+    for _ in pairs(right) do
+        right_count += 1
+    end
+    return count == right_count
+end
+
+local function clone_config_value(value: any)
+    if value == nil then
+        return nil
+    end
+    local success, serialized = pcall(function()
+        return deep_copy_serialize(value)
+    end)
+    if not success then
+        return nil, tostring(serialized)
+    end
+    return deep_copy_deserialize(serialized)
+end
+
+function Library:_is_internal_flag(flag: any)
+    return type(flag) == "string" and (self._internal_flags[flag] == true or flag:sub(1, 9) == "roni_cfg_")
+end
+
+function Library:register_flag(flag: any, expected_type: any, metadata: any?)
+    if type(flag) ~= "string" or flag == "" then
+        return false, "flag must be a non-empty string"
+    end
+    metadata = type(metadata) == "table" and metadata or {}
+    local existing = self._flag_metadata[flag]
+    if not existing then
+        table.insert(self._flag_order, flag)
+        existing = {}
+        self._flag_metadata[flag] = existing
+    end
+    if expected_type ~= nil then
+        self._registered_flags[flag] = expected_type
+        existing.type = expected_type
+    end
+    if metadata.default ~= nil or existing.default == nil then
+        existing.default = clone_config_value(metadata.default)
+    end
+    if metadata.persist ~= nil then
+        existing.persist = metadata.persist == true
+    elseif existing.persist == nil then
+        existing.persist = true
+    end
+    Config._nonpersistent_flags[flag] = existing.persist == false
+    if metadata.export ~= nil then
+        existing.export = metadata.export == true
+    elseif existing.export == nil then
+        existing.export = existing.persist and not self:_is_internal_flag(flag)
+    end
+    if metadata.keybind_export ~= nil then
+        existing.keybind_export = metadata.keybind_export == true
+    elseif existing.keybind_export == nil then
+        existing.keybind_export = existing.export
+    end
+    existing.priority = tonumber(metadata.priority) or existing.priority or 100
+
+    local id = self._flag_ids[flag] or ShareCodec.flag_id(flag)
+    self._flag_ids[flag] = id
+    local registered_for_id = self._id_flags[id]
+    if registered_for_id == nil then
+        self._id_flags[id] = flag
+    elseif registered_for_id ~= flag then
+        self._id_flags[id] = false
+    end
+
     local saved = self._config._flags[flag]
-    if saved ~= nil and typeof(saved) ~= expected_type then
-        self._config._flags[flag] = nil
-        Config:save(game.GameId, self._config)
+    if saved ~= nil and expected_type ~= nil and typeof(saved) ~= expected_type then
+        self._config._flags[flag] = clone_config_value(existing.default)
+        return false, "discarded saved value with the wrong type"
     end
+    return true
 end
 function Library:flag_type(flag: any, flag_type: any)
     if not Library._config or not Library._config._flags or Library._config._flags[flag] == nil then
@@ -647,16 +1037,20 @@ function Library:set_keybind(flag: any, key_code: any)
         return nil
     end
     self._config._keybinds = self._config._keybinds or {}
+    local previous = self:get_keybind_name(flag)
     if not key_code or key_code == Enum.KeyCode.Unknown then
         self._config._keybinds[flag] = nil
+        if previous ~= nil then self:_notify_keybind(flag) end
         return nil
     end
     local key_name = tostring(key_code):gsub("Enum.KeyCode.", "")
     if key_name == "" or key_name == "Unknown" or key_name == "None" then
         self._config._keybinds[flag] = nil
+        if previous ~= nil then self:_notify_keybind(flag) end
         return nil
     end
     self._config._keybinds[flag] = "Enum.KeyCode." .. key_name
+    if previous ~= key_name then self:_notify_keybind(flag) end
     return key_name
 end
 function Library:set_toggle_keybind(key_code: any)
@@ -664,71 +1058,315 @@ function Library:set_toggle_keybind(key_code: any)
 end
 function Library:load()
 end
-local SHARE_PREFIX = "RONI1"
-function Library:_is_internal_flag(flag: any)
-    return self._internal_flags[flag] == true
-end
 function Library:register_component(flag: any, apply_fn: any)
     if not flag or type(apply_fn) ~= 'function' then
-        return
+        return false
     end
-    self._component_registry[flag] = apply_fn
+    local listeners = self._component_registry[flag]
+    if not listeners then
+        listeners = {}
+        self._component_registry[flag] = listeners
+    end
+    table.insert(listeners, apply_fn)
+    local connected = true
+    return function()
+        if not connected then
+            return
+        end
+        connected = false
+        local index = table.find(listeners, apply_fn)
+        if index then
+            table.remove(listeners, index)
+        end
+    end
+end
+function Library:register_keybind_listener(flag: any, listener: any)
+    if type(flag) ~= "string" or type(listener) ~= "function" then
+        return false
+    end
+    local listeners = self._keybind_listeners[flag]
+    if not listeners then
+        listeners = {}
+        self._keybind_listeners[flag] = listeners
+    end
+    table.insert(listeners, listener)
+    return true
+end
+function Library:_notify_keybind(flag: any)
+    local key_name = self:get_keybind_name(flag)
+    for _, listener in ipairs(self._keybind_listeners[flag] or {}) do
+        local success, listener_error = pcall(listener, key_name)
+        if not success then
+            warn("[roni] keybind listener failed:", listener_error)
+        end
+    end
+    self:update_keybind_entry(flag)
+end
+function Library:_share_key_for_flag(flag: string)
+    local id = self._flag_ids[flag]
+    if not id then
+        return nil
+    end
+    if self._id_flags[id] == false then
+        return id .. "!" .. ShareCodec.escape(flag)
+    end
+    return id
+end
+function Library:_flag_from_share_key(key: string)
+    local id, encoded_flag = key:match("^([0-9A-Z]+)!(.+)$")
+    if id then
+        local flag = ShareCodec.unescape(encoded_flag)
+        if flag and self._id_flags[id] == false and self._flag_ids[flag] == id then
+            return flag
+        end
+        return nil
+    end
+    if not key:match("^[0-9A-Z]+$") then
+        return nil
+    end
+    local flag = self._id_flags[key]
+    return type(flag) == "string" and flag or nil
 end
 function Library:_exportable_flags()
     local out = {}
-    for flag, value in pairs(self._config._flags or {}) do
-        if not self:_is_internal_flag(flag) then
-            out[flag] = value
+    for _, flag in ipairs(self._flag_order) do
+        local metadata = self._flag_metadata[flag]
+        local value = self._config._flags[flag]
+        if metadata and metadata.export and not self:_is_internal_flag(flag) and value ~= nil and not self:values_equal(value, metadata.default) then
+            local cloned, clone_error = clone_config_value(value)
+            if clone_error then
+                error("cannot clone exportable flag " .. flag .. ": " .. clone_error)
+            end
+            out[flag] = cloned
+        end
+    end
+    return out
+end
+function Library:_exportable_keybinds()
+    local out = {}
+    for _, flag in ipairs(self._flag_order) do
+        local metadata = self._flag_metadata[flag]
+        local keybind = self._config._keybinds[flag]
+        if metadata and metadata.keybind_export and not self:_is_internal_flag(flag) and type(keybind) == "string" then
+            out[flag] = keybind
         end
     end
     return out
 end
 function Library:encode_share()
-    local payload = HttpService:JSONEncode({
-        v = 1,
-        f = self:_exportable_flags()
-    })
-    return SHARE_PREFIX .. ":" .. Base64.encode(payload)
+    local records = {}
+    for flag, value in pairs(self:_exportable_flags()) do
+        local encoded, encode_error = ShareCodec.encode_value(value)
+        if not encoded then
+            error("cannot export " .. flag .. ": " .. tostring(encode_error))
+        end
+        local key = self:_share_key_for_flag(flag)
+        if not key then
+            error("flag is missing a share id: " .. flag)
+        end
+        records[#records + 1] = "f" .. key .. "=" .. encoded
+    end
+    for flag, stored_keybind in pairs(self:_exportable_keybinds()) do
+        local key_name = tostring(stored_keybind):gsub("^Enum%.KeyCode%.", "")
+        if #key_name == 0 or #key_name > 64 or not key_name:match("^[%w_]+$") then
+            error("cannot export invalid keybind for " .. flag)
+        end
+        local encoded = ShareCodec.encode_value(key_name)
+        local key = self:_share_key_for_flag(flag)
+        if encoded and key then
+            records[#records + 1] = "k" .. key .. "=" .. encoded
+        end
+    end
+    if #records > ShareCodec.MAX_RECORDS then
+        error("config has too many share records")
+    end
+    table.sort(records)
+    local payload = ShareCodec.PREFIX
+    if #records > 0 then
+        payload = payload .. "|" .. table.concat(records, "|")
+    end
+    local code = payload .. "~" .. ShareCodec.encode_base36(ShareCodec.checksum(payload))
+    if #code > ShareCodec.MAX_CODE_LENGTH then
+        error("share code is too long")
+    end
+    return code
 end
 function Library:decode_share(code: string)
-    if type(code) ~= "string" then return nil end
+    if type(code) ~= "string" then return nil, "share code must be a string" end
     code = code:match("^%s*(.-)%s*$")
-    local prefix, body = code:match("^(" .. SHARE_PREFIX .. ")%s*:%s*(.+)$")
-    if not prefix or not body then
-        return nil
+    if #code == 0 or #code > ShareCodec.MAX_CODE_LENGTH then
+        return nil, "share code length is invalid"
     end
-    local success, json = pcall(function()
-        return Base64.decode(body)
-    end)
-    if not success or type(json) ~= "string" then
-        return nil
+    local payload, supplied_checksum = code:match("^(.-)~([0-9A-Z]+)$")
+    if not payload or (payload ~= ShareCodec.PREFIX and payload:sub(1, #ShareCodec.PREFIX + 1) ~= ShareCodec.PREFIX .. "|") then
+        return nil, "unsupported share-code format"
     end
-    local ok, decoded = pcall(function()
-        return HttpService:JSONDecode(json)
-    end)
-    if not ok or type(decoded) ~= "table" then
-        return nil
+    local expected_checksum = ShareCodec.encode_base36(ShareCodec.checksum(payload))
+    if supplied_checksum ~= expected_checksum then
+        return nil, "share-code checksum does not match"
     end
-    if type(decoded.f) ~= "table" then
-        return nil
+    local decoded = { v = 2, f = {}, k = {} }
+    if payload == ShareCodec.PREFIX then
+        return decoded
+    end
+    local body = payload:sub(#ShareCodec.PREFIX + 2)
+    if body == "" or body:sub(1, 1) == "|" or body:find("||", 1, true) or body:sub(-1) == "|" then
+        return nil, "share code contains an empty record"
+    end
+    local seen_records = {}
+    local record_count = 0
+    local previous_record = nil
+    for record in body:gmatch("[^|]+") do
+        record_count += 1
+        if record_count > ShareCodec.MAX_RECORDS then
+            return nil, "share code has too many records"
+        end
+        if previous_record and record <= previous_record then
+            return nil, "share records are not in canonical order"
+        end
+        previous_record = record
+        local kind, encoded_key, encoded_value = record:match("^([fk])([^=]+)=(.+)$")
+        if not kind then
+            return nil, "share code contains a malformed record"
+        end
+        local flag = self:_flag_from_share_key(encoded_key)
+        local metadata = flag and self._flag_metadata[flag] or nil
+        if not flag or not metadata or self:_is_internal_flag(flag) then
+            return nil, "share code references an unknown flag"
+        end
+        local record_id = kind .. ":" .. flag
+        if seen_records[record_id] then
+            return nil, "share code contains a duplicate flag"
+        end
+        seen_records[record_id] = true
+        local value, decode_error = ShareCodec.decode_value(encoded_value)
+        if value == nil then
+            return nil, decode_error
+        end
+        if kind == "f" then
+            if not metadata.export or metadata.type == nil or typeof(value) ~= metadata.type then
+                return nil, "share value has the wrong type for " .. flag
+            end
+            decoded.f[flag] = value
+        else
+            if not metadata.keybind_export or type(value) ~= "string" or #value > 64 or not value:match("^[%w_]+$") then
+                return nil, "share code contains an invalid keybind"
+            end
+            decoded.k[flag] = "Enum.KeyCode." .. value
+        end
     end
     return decoded
 end
-function Library:apply_config(flags: any)
-    if type(flags) ~= "table" then return end
-    for flag, value in pairs(flags) do
-        if not self:_is_internal_flag(flag) then
-            self._config._flags[flag] = value
-            local apply_fn = self._component_registry[flag]
-            if apply_fn then
-                local ok = pcall(apply_fn, value)
-                if not ok then
-                    warn('[roni] failed to apply flag live:', tostring(flag))
-                end
+function Library:apply_config(flags: any, keybinds: any?, options: any?)
+    if options == nil and type(keybinds) == "table" and (keybinds.replace ~= nil or keybinds.animate ~= nil or keybinds.callback ~= nil) then
+        options = keybinds
+        keybinds = nil
+    end
+    options = type(options) == "table" and options or {}
+    if type(flags) ~= "table" or (keybinds ~= nil and type(keybinds) ~= "table") then
+        return { ok = false, applied = 0, errors = { "config payload must contain tables" } }
+    end
+
+    local next_flags = {}
+    local next_keybinds = {}
+    for flag, value in pairs(self._config._flags or {}) do next_flags[flag] = value end
+    for flag, value in pairs(self._config._keybinds or {}) do next_keybinds[flag] = value end
+    if options.replace == true then
+        for _, flag in ipairs(self._flag_order) do
+            local metadata = self._flag_metadata[flag]
+            if metadata and metadata.export and not self:_is_internal_flag(flag) then
+                next_flags[flag] = clone_config_value(metadata.default)
+            end
+            if metadata and metadata.keybind_export and not self:_is_internal_flag(flag) then
+                next_keybinds[flag] = nil
             end
         end
     end
-    Config:save(game.GameId, self._config)
+
+    local errors = {}
+    local skipped = 0
+    for flag, value in pairs(flags) do
+        local metadata = type(flag) == "string" and self._flag_metadata[flag] or nil
+        if not metadata or not metadata.export or self:_is_internal_flag(flag) then
+            skipped += 1
+        elseif metadata.type == nil or typeof(value) ~= metadata.type then
+            errors[#errors + 1] = "wrong value type for " .. flag
+        else
+            local cloned, clone_error = clone_config_value(value)
+            if clone_error then
+                errors[#errors + 1] = "invalid value for " .. flag .. ": " .. clone_error
+            else
+                next_flags[flag] = cloned
+            end
+        end
+    end
+    for flag, stored_keybind in pairs(keybinds or {}) do
+        local metadata = type(flag) == "string" and self._flag_metadata[flag] or nil
+        local key_name = type(stored_keybind) == "string" and stored_keybind:gsub("^Enum%.KeyCode%.", "") or nil
+        if not metadata or not metadata.keybind_export or self:_is_internal_flag(flag) then
+            skipped += 1
+        elseif not key_name or #key_name > 64 or not key_name:match("^[%w_]+$") then
+            errors[#errors + 1] = "invalid keybind for " .. flag
+        else
+            next_keybinds[flag] = "Enum.KeyCode." .. key_name
+        end
+    end
+    if #errors > 0 then
+        return { ok = false, applied = 0, errors = errors }
+    end
+
+    local changed_flags = {}
+    local changed_keybinds = {}
+    local order_index = {}
+    for index, flag in ipairs(self._flag_order) do
+        order_index[flag] = index
+        if not self:values_equal(self._config._flags[flag], next_flags[flag]) then
+            changed_flags[#changed_flags + 1] = flag
+        end
+        if self._config._keybinds[flag] ~= next_keybinds[flag] then
+            changed_keybinds[#changed_keybinds + 1] = flag
+        end
+    end
+    table.sort(changed_flags, function(left, right)
+        local left_priority = (self._flag_metadata[left] and self._flag_metadata[left].priority) or 100
+        local right_priority = (self._flag_metadata[right] and self._flag_metadata[right].priority) or 100
+        if left_priority == right_priority then
+            return (order_index[left] or 0) < (order_index[right] or 0)
+        end
+        return left_priority < right_priority
+    end)
+
+    self._config._flags = next_flags
+    self._config._keybinds = next_keybinds
+    Config:begin_batch()
+    local apply_options = {
+        persist = false,
+        animate = options.animate == true,
+        callback = options.callback ~= false,
+        source = options.source or "config",
+    }
+    for _, flag in ipairs(changed_flags) do
+        for _, apply_fn in ipairs(self._component_registry[flag] or {}) do
+            local success, apply_error = pcall(apply_fn, next_flags[flag], apply_options)
+            if not success then
+                errors[#errors + 1] = "failed to apply " .. flag .. ": " .. tostring(apply_error)
+            end
+        end
+    end
+    for _, flag in ipairs(changed_keybinds) do
+        self:_notify_keybind(flag)
+    end
+    local changed_count = #changed_flags + #changed_keybinds
+    local save_ok, save_error = Config:end_batch(game.GameId, self._config, changed_count > 0)
+    if not save_ok then
+        errors[#errors + 1] = "failed to save config: " .. tostring(save_error)
+    end
+    return {
+        ok = #errors == 0,
+        applied = changed_count,
+        skipped = skipped,
+        errors = errors,
+    }
 end
 function Library:_named_configs_path()
     return ConfigFolder .. "/configs_" .. tostring(game.GameId) .. ".json"
@@ -736,28 +1374,37 @@ end
 function Library:_read_named_configs()
     local path = self:_named_configs_path()
     if not isfile(path) then
-        return {}
+        return {}, nil
     end
     local ok, raw = pcall(readfile, path)
     if not ok or type(raw) ~= "string" or raw == "" then
-        return {}
+        return {}, "could not read named configs"
     end
     local decoded_ok, decoded = pcall(function()
         return HttpService:JSONDecode(raw)
     end)
     if not decoded_ok or type(decoded) ~= "table" then
-        return {}
+        return {}, "named configs are corrupt"
     end
-    return decoded
+    decoded = deep_copy_deserialize(decoded)
+    local clean = {}
+    for name, entry in pairs(decoded) do
+        if type(name) == "string" and type(entry) == "table" and type(entry._flags) == "table" and (entry._keybinds == nil or type(entry._keybinds) == "table") then
+            clean[name] = entry
+        end
+    end
+    return clean, nil
 end
 function Library:_write_named_configs(map: any)
     local path = self:_named_configs_path()
-    local ok = pcall(function()
-        writefile(path, HttpService:JSONEncode(map))
+    local ok, write_error = pcall(function()
+        writefile(path, HttpService:JSONEncode(deep_copy_serialize(map)))
     end)
     if not ok then
-        warn('[roni] failed to write named configs')
+        warn('[roni] failed to write named configs', write_error)
+        return false, tostring(write_error)
     end
+    return true
 end
 function Library:get_named_config_names()
     local map = self:_read_named_configs()
@@ -769,41 +1416,50 @@ function Library:get_named_config_names()
     return names
 end
 function Library:save_named_config(name: string)
-    if type(name) ~= "string" then return false end
+    if type(name) ~= "string" then return false, "config name must be a string" end
     name = name:match("^%s*(.-)%s*$")
-    if name == "" then return false end
-    local map = self:_read_named_configs()
-    map[name] = { _flags = self:_exportable_flags() }
-    self:_write_named_configs(map)
-    return true
+    if name == "" or #name > 80 then return false, "config name is empty or too long" end
+    local map, read_error = self:_read_named_configs()
+    if read_error then return false, read_error end
+    map[name] = {
+        _version = 2,
+        _flags = self:_exportable_flags(),
+        _keybinds = self:_exportable_keybinds(),
+    }
+    return self:_write_named_configs(map)
 end
 function Library:load_named_config(name: string)
-    if type(name) ~= "string" then return false end
-    local map = self:_read_named_configs()
+    if type(name) ~= "string" then return false, "config name must be a string" end
+    local map, read_error = self:_read_named_configs()
+    if read_error then return false, read_error end
     local entry = map[name]
-    if type(entry) ~= "table" then return false end
-    self:apply_config(entry._flags)
-    return true
+    if type(entry) ~= "table" or type(entry._flags) ~= "table" then return false, "named config was not found or is invalid" end
+    local result = self:apply_config(entry._flags, entry._keybinds or {}, { replace = true, source = "named" })
+    return result.ok == true, result
 end
 function Library:delete_named_config(name: string)
-    if type(name) ~= "string" then return false end
-    local map = self:_read_named_configs()
-    if map[name] == nil then return false end
+    if type(name) ~= "string" then return false, "config name must be a string" end
+    local map, read_error = self:_read_named_configs()
+    if read_error then return false, read_error end
+    if map[name] == nil then return false, "named config was not found" end
     map[name] = nil
-    self:_write_named_configs(map)
-    return true
+    return self:_write_named_configs(map)
 end
 function Library:set_clipboard(text: string)
     local fn = setclipboard or toclipboard or (syn and syn.write_clipboard)
     if fn then
-        pcall(fn, text)
-        return true
+        local success = pcall(fn, text)
+        return success
     end
     return false
 end
 function Library:clear_keybind(flag: any)
     if self._config and self._config._keybinds then
+        local had_keybind = self:get_keybind_name(flag) ~= nil
         self._config._keybinds[flag] = nil
+        if had_keybind then
+            self:_notify_keybind(flag)
+        end
     end
 end
 function Library:keybind_matches(flag: any, input: InputObject)
@@ -1128,6 +1784,13 @@ function Library:create_ui()
             self._acrylic_blur:destroy()
             self._acrylic_blur = nil
         end
+        self._choosing_keybind = false
+        self._dragging = false
+        self._ui_loaded = false
+        self._cfg_dropdown_mgr = nil
+        self._cfg_name_textbox_mgr = nil
+        self._cfg_code_textbox_mgr = nil
+        active_drag_input = nil
         self._ui = nil
         Connections:disconnect_all()
     end)
@@ -1155,6 +1818,10 @@ function Library:create_ui()
         end
     end
     function self:load()
+        if self._ui_loaded then
+            return
+        end
+        self._ui_loaded = true
         local content = {}
         for _, object in Allusive:GetDescendants() do
             if not object:IsA('ImageLabel') then
@@ -1178,7 +1845,6 @@ function Library:create_ui()
             Size = UDim2.fromOffset(698, 479)
         }):Play()
         self._acrylic_blur = AcrylicBlur.new(Container)
-        self._ui_loaded = true
         self:create_configs_tab()
     end
     function self:create_configs_tab()
@@ -1194,17 +1860,30 @@ function Library:create_ui()
         }) do
             self._internal_flags[flag] = true
         end
+        local function config_error_text(result: any, fallback: string)
+            if type(result) == 'string' and result ~= '' then
+                return result
+            end
+            if type(result) == 'table' and type(result.errors) == 'table' and #result.errors > 0 then
+                return tostring(result.errors[1])
+            end
+            return fallback
+        end
         local ConfigsTab = self:create_tab('Configs', CFG_ICON)
         local Module = ConfigsTab:create_module({
             title = 'Config Manager',
             description = 'Save, load and share your configs.',
             flag = 'roni_cfg_module',
-            rich = false
+            rich = false,
+            persist = false,
+            export = false
         })
-        Module:create_textbox({
+        self._cfg_name_textbox_mgr = Module:create_textbox({
             title = 'Config Name',
             flag = NameFlag,
-            placeholder = 'Enter a name...'
+            placeholder = 'Enter a name...',
+            persist = false,
+            export = false
         })
         Module:create_feature({
             title = 'Save Config',
@@ -1217,13 +1896,24 @@ function Library:create_ui()
                     self.SendNotification({ title = 'Configs', text = 'Enter a config name first.', type = 'warn', duration = 4 })
                     return
                 end
-                self:save_named_config(name)
+                local ok, result = self:save_named_config(name)
+                if not ok then
+                    self.SendNotification({
+                        title = 'Configs',
+                        text = config_error_text(result, 'Could not save "' .. name .. '".'),
+                        type = 'error',
+                        duration = 5
+                    })
+                    return
+                end
                 local names = self:get_named_config_names()
                 self._cfg_dropdown_mgr = self._cfg_dropdown_mgr:New({
                     Order = true,
                     title = 'Your Configs',
                     flag = ListFlag,
-                    options = names
+                    options = names,
+                    persist = false,
+                    export = false
                 })
                 self.SendNotification({ title = 'Configs', text = 'Saved "' .. name .. '".', type = 'success', duration = 4 })
             end
@@ -1231,7 +1921,9 @@ function Library:create_ui()
         self._cfg_dropdown_mgr = Module:create_dropdown({
             title = 'Your Configs',
             flag = ListFlag,
-            options = self:get_named_config_names()
+            options = self:get_named_config_names(),
+            persist = false,
+            export = false
         })
         Module:create_feature({
             title = 'Load',
@@ -1243,11 +1935,16 @@ function Library:create_ui()
                     self.SendNotification({ title = 'Configs', text = 'Select a config to load.', type = 'warn', duration = 4 })
                     return
                 end
-                local ok = self:load_named_config(name)
-                if ok then
+                local ok, result = self:load_named_config(name)
+                if ok and (type(result) ~= 'table' or result.ok ~= false) then
                     self.SendNotification({ title = 'Configs', text = 'Loaded "' .. tostring(name) .. '".', type = 'success', duration = 4 })
                 else
-                    self.SendNotification({ title = 'Configs', text = 'Could not load "' .. tostring(name) .. '".', type = 'error', duration = 4 })
+                    self.SendNotification({
+                        title = 'Configs',
+                        text = config_error_text(result, 'Could not load "' .. tostring(name) .. '".'),
+                        type = 'error',
+                        duration = 5
+                    })
                 end
             end
         })
@@ -1261,30 +1958,54 @@ function Library:create_ui()
                     self.SendNotification({ title = 'Configs', text = 'Select a config to delete.', type = 'warn', duration = 4 })
                     return
                 end
-                self:delete_named_config(name)
+                local ok, result = self:delete_named_config(name)
+                if not ok then
+                    self.SendNotification({
+                        title = 'Configs',
+                        text = config_error_text(result, 'Could not delete "' .. tostring(name) .. '".'),
+                        type = 'error',
+                        duration = 5
+                    })
+                    return
+                end
+                self._config._flags[ListFlag] = nil
                 self._cfg_dropdown_mgr = self._cfg_dropdown_mgr:New({
                     Order = true,
                     title = 'Your Configs',
                     flag = ListFlag,
-                    options = self:get_named_config_names()
+                    options = self:get_named_config_names(),
+                    persist = false,
+                    export = false
                 })
                 self.SendNotification({ title = 'Configs', text = 'Deleted "' .. tostring(name) .. '".', type = 'success', duration = 4 })
             end
         })
         Module:create_divider({ title = 'Share', showtopic = true })
-        Module:create_textbox({
+        self._cfg_code_textbox_mgr = Module:create_textbox({
             title = 'Share Code',
             flag = CodeFlag,
-            placeholder = 'Paste a share code or export here...'
+            placeholder = 'Paste a share code or export here...',
+            persist = false,
+            export = false
         })
         Module:create_feature({
             title = 'Export Code',
             flag = 'roni_cfg_export',
             disablecheck = true,
             button_callback = function()
-                local code = self:encode_share()
-                self._config._flags[CodeFlag] = code
-                Config:save(game.GameId, self._config)
+                local encoded, code = pcall(function()
+                    return self:encode_share()
+                end)
+                if not encoded or type(code) ~= 'string' or code == '' then
+                    self.SendNotification({
+                        title = 'Configs',
+                        text = config_error_text(code, 'Could not generate a share code.'),
+                        type = 'error',
+                        duration = 5
+                    })
+                    return
+                end
+                self._cfg_code_textbox_mgr:Set(code, { source = 'export' })
                 local copied = self:set_clipboard(code)
                 local msg = 'Code generated (' .. #code .. ' chars).'
                 if copied then
@@ -1306,12 +2027,26 @@ function Library:create_ui()
                     self.SendNotification({ title = 'Configs', text = 'Paste a share code first.', type = 'warn', duration = 4 })
                     return
                 end
-                local decoded = self:decode_share(code)
-                if not decoded or type(decoded.f) ~= "table" then
-                    self.SendNotification({ title = 'Configs', text = 'Invalid share code.', type = 'error', duration = 4 })
+                local decoded, decode_error = self:decode_share(code)
+                if not decoded or type(decoded.f) ~= "table" or (decoded.k ~= nil and type(decoded.k) ~= 'table') then
+                    self.SendNotification({
+                        title = 'Configs',
+                        text = config_error_text(decode_error, 'Invalid share code.'),
+                        type = 'error',
+                        duration = 5
+                    })
                     return
                 end
-                self:apply_config(decoded.f)
+                local result = self:apply_config(decoded.f, decoded.k, { replace = true })
+                if type(result) ~= 'table' or result.ok ~= true then
+                    self.SendNotification({
+                        title = 'Configs',
+                        text = config_error_text(result, 'Could not import this config.'),
+                        type = 'error',
+                        duration = 5
+                    })
+                    return
+                end
                 self.SendNotification({ title = 'Configs', text = 'Config imported and applied.', type = 'success', duration = 4 })
             end
         })
@@ -1500,6 +2235,11 @@ function Library:create_ui()
                 _size = 0,
                 _multiplier = 0
             }
+            local module_persistent = settings.persist ~= false
+            local module_exportable = settings.export
+            if module_exportable == nil then
+                module_exportable = module_persistent
+            end
             if settings.section == 'right' then
                 settings.section = RightSection
             else
@@ -1645,49 +2385,65 @@ function Library:create_ui()
             UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
             UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
             UIListLayout.Parent = Options
-            function ModuleManager:change_state(state: boolean)
+            function ModuleManager:change_state(state: boolean, opts: any)
+                opts = opts or {}
+                state = state == true
+                if Library:values_equal(self._state, state) then
+                    return false
+                end
+
                 self._state = state
-                if self._state then
+                local module_size = self._state and UDim2.fromOffset(241, 93 + self._size + self._multiplier) or UDim2.fromOffset(241, 93)
+                local toggle_color = self._state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(0, 0, 0)
+                local circle_color = self._state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(80, 80, 80)
+                local circle_position = self._state and UDim2.fromScale(0.53, 0.5) or UDim2.fromScale(0, 0.5)
+
+                if opts.animate ~= false then
                     TweenService:Create(Module, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        Size = UDim2.fromOffset(241, 93 + self._size + self._multiplier)
+                        Size = module_size
                     }):Play()
                     TweenService:Create(Toggle, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+                        BackgroundColor3 = toggle_color
                     }):Play()
                     TweenService:Create(Circle, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-                        Position = UDim2.fromScale(0.53, 0.5)
+                        BackgroundColor3 = circle_color,
+                        Position = circle_position
                     }):Play()
                 else
-                    TweenService:Create(Module, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        Size = UDim2.fromOffset(241, 93)
-                    }):Play()
-                    TweenService:Create(Toggle, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-                    }):Play()
-                    TweenService:Create(Circle, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        BackgroundColor3 = Color3.fromRGB(80, 80, 80),
-                        Position = UDim2.fromScale(0, 0.5)
-                    }):Play()
+                    Module.Size = module_size
+                    Toggle.BackgroundColor3 = toggle_color
+                    Circle.BackgroundColor3 = circle_color
+                    Circle.Position = circle_position
                 end
+
                 Library._config._flags[settings.flag] = self._state
-                Config:save(game.GameId, Library._config)
-                if settings.callback then
+                if opts.persist ~= false and module_persistent then
+                    Config:save(game.GameId, Library._config)
+                end
+                if opts.callback ~= false and settings.callback then
                     settings.callback(self._state)
                 end
+                return true
             end
-            Library:register_flag(settings.flag, 'boolean')
-            if Library:flag_type(settings.flag, 'boolean') then
-                ModuleManager._state = Library._config._flags[settings.flag]
-                if settings.callback then
-                    settings.callback(ModuleManager._state)
+            Library:register_flag(settings.flag, 'boolean', {
+                default = false,
+                persist = module_persistent,
+                export = module_exportable == true and not Library:_is_internal_flag(settings.flag),
+                priority = 10
+            })
+            local initial_module_state = module_persistent and Library:flag_type(settings.flag, 'boolean') and Library._config._flags[settings.flag] or false
+            ModuleManager._state = not initial_module_state
+            ModuleManager:change_state(initial_module_state, {
+                persist = false,
+                animate = false,
+                callback = true,
+                source = 'init'
+            })
+            Library:register_component(settings.flag, function(value, opts)
+                if type(value) == 'boolean' then
+                    ModuleManager:change_state(value, opts)
                 end
-                if ModuleManager._state then
-                    Toggle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-                    Circle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-                    Circle.Position = UDim2.fromScale(0.53, 0.5)
-                end
-            end
+            end)
             Header.MouseButton1Click:Connect(function()
                 ModuleManager:change_state(not ModuleManager._state)
             end)
@@ -1782,10 +2538,11 @@ function Library:create_ui()
                 local Body = Instance.new('TextLabel')
                 Body.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Regular, Enum.FontStyle.Normal)
                 Body.TextColor3 = Color3.fromRGB(220, 220, 220)
-                if not settings.rich then
+                local body_is_rich = settings.rich == true
+                Body.RichText = body_is_rich
+                if not body_is_rich then
                     Body.Text = settings.text or "Skibidi" 
                 else
-                    Body.RichText = true
                     Body.Text = settings.richtext or "<font color='rgb(255,0,0)'>Allusive</font> user" 
                 end
                 Body.Size = UDim2.new(1, -10, 0, 0)
@@ -1808,10 +2565,11 @@ function Library:create_ui()
                     }):Play()
                 end)
                 function TextManager:Set(new_settings)
-                    if not new_settings.rich then
+                    local body_is_rich = new_settings.rich == true
+                    Body.RichText = body_is_rich
+                    if not body_is_rich then
                         Body.Text = new_settings.text or "Skibidi" 
                     else
-                        Body.RichText = true
                         Body.Text = new_settings.richtext or "<font color='rgb(255,0,0)'>Allusive</font> user" 
                     end
                 end;
@@ -1819,8 +2577,16 @@ function Library:create_ui()
             end
             function ModuleManager:create_textbox(settings: any)
                 LayoutOrderModule = LayoutOrderModule + 1
+                local default_text = type(settings.default) == 'string' and settings.default or ''
+                local textbox_persistent = settings.persist ~= false
+                local textbox_exportable = settings.export
+                if textbox_exportable == nil then
+                    textbox_exportable = textbox_persistent
+                end
+                local had_saved_text = textbox_persistent and Library:flag_type(settings.flag, 'string') == true
+                local initial_text = had_saved_text and Library._config._flags[settings.flag] or default_text
                 local TextboxManager = {
-                    _text = ""
+                    _text = nil
                 }
                 if self._size == 0 then
                     self._size = 17
@@ -1849,7 +2615,7 @@ function Library:create_ui()
                 Textbox.TextColor3 = Color3.fromRGB(255, 255, 255)
                 Textbox.BorderColor3 = Color3.fromRGB(0, 0, 0)
                 Textbox.PlaceholderText = settings.placeholder or "Enter text..."
-                Textbox.Text = typeof(Library._config._flags[settings.flag]) == "string" and Library._config._flags[settings.flag] or ""
+                Textbox.Text = initial_text
                 Textbox.Name = 'Textbox'
                 Textbox.Size = UDim2.new(0, 207, 0, 15)
                 Textbox.BorderSizePixel = 0
@@ -1862,35 +2628,133 @@ function Library:create_ui()
                 local UICorner = Instance.new('UICorner')
                 UICorner.CornerRadius = UDim.new(0, 4)
                 UICorner.Parent = Textbox
-                function TextboxManager:update_text(text: string)
+                function TextboxManager:update_text(text: string, opts: any)
+                    if type(text) ~= 'string' then
+                        return false
+                    end
+                    opts = opts or {}
+                    local changed = not Library:values_equal(self._text, text)
+                    Textbox.Text = text
+                    if not changed then
+                        return false
+                    end
                     self._text = text
                     Library._config._flags[settings.flag] = self._text
-                    Config:save(game.GameId, Library._config)
-                    if settings.callback then
+                    if opts.persist ~= false and textbox_persistent then
+                        Config:save(game.GameId, Library._config)
+                    end
+                    if opts.callback ~= false and settings.callback then
                         settings.callback(self._text)
                     end
+                    return true
                 end
-                Library:register_flag(settings.flag, 'string')
-                if Library:flag_type(settings.flag, 'string') then
-                    TextboxManager:update_text(Library._config._flags[settings.flag])
+                function TextboxManager:Set(text: string, opts: any)
+                    return self:update_text(text, opts)
                 end
+                Library:register_flag(settings.flag, 'string', {
+                    default = default_text,
+                    persist = textbox_persistent,
+                    export = textbox_exportable == true and not Library:_is_internal_flag(settings.flag),
+                    priority = settings.priority or 100
+                })
+                TextboxManager:update_text(initial_text, {
+                    persist = false,
+                    animate = false,
+                    callback = had_saved_text,
+                    source = 'init'
+                })
                 Textbox.FocusLost:Connect(function()
                     if Textbox.Text ~= TextboxManager._text then
                         TextboxManager:update_text(Textbox.Text)
                     end
                 end)
                 if not Library:_is_internal_flag(settings.flag) then
-                    Library:register_component(settings.flag, function(value)
+                    Library:register_component(settings.flag, function(value, opts)
                         if type(value) == "string" then
-                            TextboxManager:update_text(value)
+                            TextboxManager:update_text(value, opts)
                         end
                     end)
                 end
                 return TextboxManager
             end   
+            local function begin_component_keybind_capture(flag: any, update_display: any)
+                if Library._choosing_keybind or not UserInputService.KeyboardEnabled then
+                    return
+                end
+                local connection_key = "component_keybind_capture_" .. tostring(flag)
+                local previous_keybind = Library:get_keybind_name(flag)
+                Library._choosing_keybind = true
+                update_display(nil)
+                Connections:disconnect(connection_key)
+                local function finish_capture(key_name: any, persist: boolean)
+                    Connections:disconnect(connection_key)
+                    Library._choosing_keybind = false
+                    update_display(key_name)
+                    Library:update_keybind_entry(flag)
+                    if persist and not Library:values_equal(previous_keybind, key_name) then
+                        Config:save(game.GameId, Library._config)
+                    end
+                end
+                Connections[connection_key] = UserInputService.InputBegan:Connect(function(input: InputObject, processed: boolean)
+                    if processed then
+                        return
+                    end
+                    if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Enum.KeyCode.Escape then
+                        finish_capture(previous_keybind, false)
+                        return
+                    end
+                    local key_name = nil
+                    if input.UserInputType == Enum.UserInputType.Keyboard then
+                        if input.KeyCode == Enum.KeyCode.Unknown then
+                            return
+                        end
+                        if input.KeyCode == Enum.KeyCode.Backspace then
+                            Library:clear_keybind(flag)
+                        else
+                            key_name = Library:set_keybind(flag, input.KeyCode)
+                        end
+                    elseif input.UserInputType == Enum.UserInputType.MouseButton2 or input.UserInputType == Enum.UserInputType.MouseButton3 then
+                        Library:clear_keybind(flag)
+                    else
+                        return
+                    end
+                    finish_capture(key_name, true)
+                end)
+            end
+            local function register_managed_keybind_listener(flag: any, listener: any, owner: Instance)
+                if not Library:register_keybind_listener(flag, listener) then
+                    return
+                end
+                owner.Destroying:Once(function()
+                    local listeners = Library._keybind_listeners[flag]
+                    if type(listeners) ~= "table" then
+                        return
+                    end
+                    for index = #listeners, 1, -1 do
+                        if listeners[index] == listener then
+                            table.remove(listeners, index)
+                        end
+                    end
+                    if #listeners == 0 then
+                        Library._keybind_listeners[flag] = nil
+                    end
+                end)
+            end
             function ModuleManager:create_checkbox(settings: any)
                 LayoutOrderModule = LayoutOrderModule + 1
-                local CheckboxManager = { _state = false }
+                local default_state = settings.default == true
+                local internal_flag = Library:_is_internal_flag(settings.flag)
+                local persistent = settings.persist ~= false and not internal_flag
+                Library:register_flag(settings.flag, 'boolean', {
+                    default = default_state,
+                    persist = persistent,
+                    export = settings.export ~= false and not internal_flag,
+                    priority = settings.priority or 100,
+                    keybind_export = settings.keybind_export ~= false and not internal_flag
+                })
+                local saved_state = Library._config._flags[settings.flag]
+                local initial_state = typeof(saved_state) == "boolean" and saved_state or default_state
+                local CheckboxManager = { _state = nil }
                 if self._size == 0 then
                     self._size = 17
                 end
@@ -1980,7 +2844,6 @@ function Library:create_ui()
                         Transparency = 0.5
                     }):Play()
                 end)
-                local keybindLabel
                 local function resize_keybind_box(text)
                     local label_text = text or "..."
                     local font_params = Instance.new("GetTextBoundsParams")
@@ -1992,58 +2855,15 @@ function Library:create_ui()
                         return TextService:GetTextBoundsAsync(font_params)
                     end)
                     local width = success and font_size.X or (#label_text * 6)
-                    KeybindBox.Size = UDim2.fromOffset(math.max(20, width + 10), 20)
+                    KeybindBox.Size = UDim2.fromOffset(math.clamp(width + 10, 20, 54), 20)
                 end
                 local function update_keybind_display(key_name)
                     local label_text = key_name or "..."
                     KeybindLabel.Text = label_text
                     resize_keybind_box(label_text)
-                    if keybindLabel then
-                        keybindLabel.Text = "[ " .. label_text .. " ]"
-                        if keybindLabel.Parent then
-                            keybindLabel.Parent.Visible = (label_text ~= "..." and label_text ~= "None" and label_text ~= "")
-                        end
-                    end
                 end
                 local function begin_checkbox_keybind_capture()
-                    if Library._choosing_keybind then return end
-                    if not UserInputService.KeyboardEnabled then return end
-                    Library._choosing_keybind = true
-                    local previous_keybind = Library:get_keybind_name(settings.flag)
-                    update_keybind_display(nil)
-                    local captureConn
-                    captureConn = UserInputService.InputBegan:Connect(function(keyInput, processed)
-                        if processed then return end
-                        if keyInput.UserInputType == Enum.UserInputType.Keyboard and keyInput.KeyCode == Enum.KeyCode.Escape then
-                            update_keybind_display(previous_keybind)
-                            captureConn:Disconnect()
-                            Library._choosing_keybind = false
-                            return
-                        end
-                        if keyInput.UserInputType == Enum.UserInputType.MouseButton2 or keyInput.UserInputType == Enum.UserInputType.MouseButton3 then
-                            Library:clear_keybind(settings.flag)
-                            Config:save(game.GameId, Library._config)
-                            update_keybind_display(nil)
-                            captureConn:Disconnect()
-                            Library._choosing_keybind = false
-                            return
-                        end
-                        if keyInput.UserInputType ~= Enum.UserInputType.Keyboard then return end
-                        if keyInput.KeyCode == Enum.KeyCode.Unknown then return end
-                        if keyInput.KeyCode == Enum.KeyCode.Backspace then
-                            Library:clear_keybind(settings.flag)
-                            Config:save(game.GameId, Library._config)
-                            update_keybind_display(nil)
-                            captureConn:Disconnect()
-                            Library._choosing_keybind = false
-                            return
-                        end
-                        captureConn:Disconnect()
-                        local keybind_string = Library:set_keybind(settings.flag, keyInput.KeyCode)
-                        Config:save(game.GameId, Library._config)
-                        Library._choosing_keybind = false
-                        update_keybind_display(keybind_string)
-                    end)
+                    begin_component_keybind_capture(settings.flag, update_keybind_display)
                 end
                 KeybindButton.MouseButton1Click:Connect(begin_checkbox_keybind_capture)
                 if not Library:get_keybind_name(settings.flag) and settings.keybind and settings.keybind ~= "Unknown" then
@@ -2053,7 +2873,7 @@ function Library:create_ui()
                 local Box = Instance.new("Frame")
                 Box.BorderColor3 = Color3.fromRGB(0, 0, 0)
                 Box.AnchorPoint = Vector2.new(1, 0.5)
-                Box.BackgroundColor3 = Library._config._flags[settings.flag] and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(40, 40, 40)
+                Box.BackgroundColor3 = initial_state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(40, 40, 40)
                 Box.Position = UDim2.new(1, 0, 0.5, 0)
                 Box.Name = "Box"
                 Box.Size = UDim2.new(0, 34, 0, 18)
@@ -2065,33 +2885,58 @@ function Library:create_ui()
                 local Dot = Instance.new("Frame")
                 Dot.Name = "Dot"
                 Dot.Size = UDim2.new(0, 14, 0, 14)
-                Dot.Position = Library._config._flags[settings.flag] and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
+                Dot.Position = initial_state and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
                 Dot.AnchorPoint = Vector2.new(0, 0.5)
-                Dot.BackgroundColor3 = Library._config._flags[settings.flag] and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(200, 200, 200)
+                Dot.BackgroundColor3 = initial_state and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(200, 200, 200)
                 Dot.BorderSizePixel = 0
                 Dot.Parent = Box
                 local DotCorner = Instance.new("UICorner")
                 DotCorner.CornerRadius = UDim.new(1, 0)
                 DotCorner.Parent = Dot
-                function CheckboxManager:change_state(state: boolean)
-                    self._state = state
-                    TweenService:Create(Box, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        BackgroundColor3 = state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(40, 40, 40)
-                    }):Play()
-                    TweenService:Create(Dot, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        Position = state and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0),
-                        BackgroundColor3 = state and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(200, 200, 200)
-                    }):Play()
-
-                    Library._config._flags[settings.flag] = self._state
-                    Config:save(game.GameId, Library._config)
-                    if settings.callback then settings.callback(self._state) end
+                function CheckboxManager:change_state(state: boolean, opts: any)
+                    opts = opts or {}
+                    local next_state = state == true
+                    local config_changed = not Library:values_equal(Library._config._flags[settings.flag], next_state)
+                    Library._config._flags[settings.flag] = next_state
+                    if Library:values_equal(self._state, next_state) then
+                        if config_changed and opts.persist ~= false and persistent then
+                            Config:save(game.GameId, Library._config)
+                        end
+                        return false
+                    end
+                    self._state = next_state
+                    local box_color = next_state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(40, 40, 40)
+                    local dot_position = next_state and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
+                    local dot_color = next_state and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(200, 200, 200)
+                    if opts.animate ~= false then
+                        TweenService:Create(Box, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+                            BackgroundColor3 = box_color
+                        }):Play()
+                        TweenService:Create(Dot, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+                            Position = dot_position,
+                            BackgroundColor3 = dot_color
+                        }):Play()
+                    else
+                        Box.BackgroundColor3 = box_color
+                        Dot.Position = dot_position
+                        Dot.BackgroundColor3 = dot_color
+                    end
+                    if opts.persist ~= false and persistent then
+                        Config:save(game.GameId, Library._config)
+                    end
+                    Library:update_keybind_entry(settings.flag)
+                    if opts.callback ~= false and settings.callback then
+                        settings.callback(next_state)
+                    end
+                    return true
                 end
 
-                Library:register_flag(settings.flag, 'boolean')
-                if Library:flag_type(settings.flag, "boolean") then
-                    CheckboxManager:change_state(Library._config._flags[settings.flag])
-                end
+                CheckboxManager:change_state(initial_state, {
+                    persist = false,
+                    animate = false,
+                    callback = true,
+                    source = "init"
+                })
                 Checkbox.MouseButton1Click:Connect(function()
                     CheckboxManager:change_state(not CheckboxManager._state)
                 end)
@@ -2110,9 +2955,14 @@ function Library:create_ui()
                 end)
                 if Connections[settings.flag .. "_keypress"] then Connections[settings.flag .. "_keypress"]:Disconnect() end
                 Connections[settings.flag .. "_keypress"] = keyPressConnection
-                Library:register_component(settings.flag, function(value)
-                    CheckboxManager:change_state(value and true or false)
+                Library:register_component(settings.flag, function(value, opts)
+                    CheckboxManager:change_state(value == true, opts)
                 end)
+                register_managed_keybind_listener(settings.flag, update_keybind_display, Checkbox)
+                Library:register_keybind_entry(settings.flag, settings.title or tostring(settings.flag), function()
+                    return CheckboxManager._state == true
+                end, update_keybind_display, false)
+                Library:update_keybind_entry(settings.flag)
                 return CheckboxManager
             end
             function ModuleManager:create_divider(settings: any)
@@ -2182,13 +3032,50 @@ function Library:create_ui()
             end
             function ModuleManager:create_slider(settings: any)
                 LayoutOrderModule = LayoutOrderModule + 1
-                settings.minimum_value = settings.minimum_value or 0
-                settings.maximum_value = settings.maximum_value or 100
+                settings.minimum_value = tonumber(settings.minimum_value) or 0
+                settings.maximum_value = tonumber(settings.maximum_value) or 100
                 if settings.minimum_value > settings.maximum_value then
                     settings.minimum_value, settings.maximum_value = settings.maximum_value, settings.minimum_value
                 end
-                settings.value = settings.value or settings.minimum_value
-                local SliderManager = {}
+                local step = settings.round_number and 1 or 0.1
+                local function quantize(value: any)
+                    local numeric_value = tonumber(value) or settings.minimum_value
+                    numeric_value = math.clamp(numeric_value, settings.minimum_value, settings.maximum_value)
+                    if settings.maximum_value == settings.minimum_value then
+                        return settings.minimum_value
+                    end
+                    local rounded = settings.minimum_value + math.round((numeric_value - settings.minimum_value) / step) * step
+                    rounded = math.clamp(rounded, settings.minimum_value, settings.maximum_value)
+                    if not settings.round_number then
+                        rounded = math.round(rounded * 10) / 10
+                    end
+                    return rounded
+                end
+                local requested_default = settings.value
+                if requested_default == nil then
+                    requested_default = settings.default
+                end
+                settings.value = quantize(requested_default == nil and settings.minimum_value or requested_default)
+                local stores_flag = not settings.ignoresaved
+                local internal_flag = Library:_is_internal_flag(settings.flag)
+                local persistent = stores_flag and settings.persist ~= false and not internal_flag
+                Library:register_flag(settings.flag, 'number', {
+                    default = settings.value,
+                    persist = persistent,
+                    export = stores_flag and settings.export ~= false and not internal_flag,
+                    priority = settings.priority or 100
+                })
+                local initial_value = stores_flag and Library._config._flags[settings.flag] or settings.value
+                initial_value = quantize(initial_value)
+                if not stores_flag then
+                    Library._config._flags[settings.flag] = nil
+                end
+                local SliderManager = {
+                    _value = nil,
+                    _active_input = nil,
+                    _drag_changed = false,
+                    _fill_tween = nil
+                }
                 if self._size == 0 then
                     self._size = 17
                 end
@@ -2290,63 +3177,101 @@ function Library:create_ui()
                 Value.TextSize = 10
                 Value.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
                 Value.Parent = Slider
-                function SliderManager:set_percentage(percentage: number)
-                    local rounded_number = 0
-                    if settings.round_number then
-                        rounded_number = math.floor(percentage)
+                function SliderManager:set_percentage(value: number, opts: any)
+                    opts = opts or {}
+                    local next_value = quantize(value)
+                    local config_changed = stores_flag and not Library:values_equal(Library._config._flags[settings.flag], next_value)
+                    if stores_flag then
+                        Library._config._flags[settings.flag] = next_value
                     else
-                        rounded_number = math.floor(percentage * 10) / 10
+                        Library._config._flags[settings.flag] = nil
                     end
+                    if Library:values_equal(self._value, next_value) then
+                        if config_changed and opts.persist ~= false and persistent then
+                            Config:save(game.GameId, Library._config)
+                        end
+                        return false
+                    end
+                    self._value = next_value
                     local value_range = settings.maximum_value - settings.minimum_value
-                    percentage = value_range == 0 and 1 or (percentage - settings.minimum_value) / value_range
-                    local slider_size = math.clamp(percentage, 0.02, 1) * Drag.Size.X.Offset
-                    local number_threshold = math.clamp(rounded_number, settings.minimum_value, settings.maximum_value)
-                    Library._config._flags[settings.flag] = number_threshold
-                    Value.Text = tostring(number_threshold)
-                    TweenService:Create(Fill, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        Size = UDim2.fromOffset(slider_size, Drag.Size.Y.Offset)
-                    }):Play()
-                    if settings.callback then
-                        settings.callback(number_threshold)
+                    local percentage = value_range == 0 and 1 or (next_value - settings.minimum_value) / value_range
+                    local fill_size = UDim2.new(math.clamp(percentage, 0.02, 1), 0, 0, Drag.Size.Y.Offset)
+                    Value.Text = tostring(next_value)
+                    if self._fill_tween then
+                        self._fill_tween:Cancel()
+                        self._fill_tween = nil
                     end
+                    if opts.animate ~= false then
+                        self._fill_tween = TweenService:Create(Fill, TweenInfo.new(0.25, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+                            Size = fill_size
+                        })
+                        self._fill_tween:Play()
+                    else
+                        Fill.Size = fill_size
+                    end
+                    if stores_flag and persistent and opts.persist ~= false then
+                        Config:save(game.GameId, Library._config)
+                    end
+                    if opts.callback ~= false and settings.callback then
+                        settings.callback(next_value)
+                    end
+                    return true
                 end
-                function SliderManager:update(input_position: any)
+                function SliderManager:update(input_position: any, opts: any)
                     local input_x = input_position and input_position.X or mouse.X
-                    local mouse_position = (input_x - Drag.AbsolutePosition.X) / Drag.Size.X.Offset
-                    local percentage = settings.minimum_value + (settings.maximum_value - settings.minimum_value) * mouse_position
-                    self:set_percentage(percentage)
+                    local absolute_width = math.max(Drag.AbsoluteSize.X, 1)
+                    local mouse_position = math.clamp((input_x - Drag.AbsolutePosition.X) / absolute_width, 0, 1)
+                    local value = settings.minimum_value + (settings.maximum_value - settings.minimum_value) * mouse_position
+                    return self:set_percentage(value, opts)
                 end
                 function SliderManager:input(input: InputObject)
-                    SliderManager:update(input and input.Position)
+                    self._active_input = input
+                    self._drag_changed = self:update(input and input.Position, {
+                        persist = false,
+                        animate = false,
+                        callback = true,
+                        source = "input"
+                    }) == true
                     Connections:disconnect('slider_drag_'..settings.flag)
                     Connections:disconnect('slider_input_'..settings.flag)
                     Connections['slider_drag_'..settings.flag] = UserInputService.InputChanged:Connect(function(changed_input: InputObject)
                         if changed_input.UserInputType ~= Enum.UserInputType.MouseMovement and changed_input.UserInputType ~= Enum.UserInputType.Touch then
                             return
                         end
-                        SliderManager:update(changed_input.Position)
+                        if changed_input.UserInputType == Enum.UserInputType.Touch and changed_input ~= SliderManager._active_input then
+                            return
+                        end
+                        if SliderManager:update(changed_input.Position, {
+                            persist = false,
+                            animate = false,
+                            callback = true,
+                            source = "input"
+                        }) then
+                            SliderManager._drag_changed = true
+                        end
                     end)
-                    Connections['slider_input_'..settings.flag] = UserInputService.InputEnded:Connect(function(input: InputObject, process: boolean)
-                        if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
+                    Connections['slider_input_'..settings.flag] = UserInputService.InputEnded:Connect(function(ended_input: InputObject)
+                        if ended_input.UserInputType ~= Enum.UserInputType.MouseButton1 and ended_input.UserInputType ~= Enum.UserInputType.Touch then
+                            return
+                        end
+                        if ended_input.UserInputType == Enum.UserInputType.Touch and ended_input ~= SliderManager._active_input then
                             return
                         end
                         Connections:disconnect('slider_drag_'..settings.flag)
                         Connections:disconnect('slider_input_'..settings.flag)
-                        if not settings.ignoresaved then
-                            Config:save(game.GameId, Library._config);
-                        end;
+                        SliderManager._active_input = nil
+                        if persistent and SliderManager._drag_changed then
+                            Config:save(game.GameId, Library._config)
+                        end
+                        SliderManager._drag_changed = false
                     end)
                 end
-                Library:register_flag(settings.flag, 'number')
-                if Library:flag_type(settings.flag, 'number') then
-                    if not settings.ignoresaved then
-                        SliderManager:set_percentage(Library._config._flags[settings.flag]);
-                    else
-                        SliderManager:set_percentage(settings.value);
-                    end;
-                else
-                    SliderManager:set_percentage(settings.value);
-                end;
+                SliderManager:set_percentage(initial_value, {
+                    persist = false,
+                    animate = false,
+                    callback = true,
+                    source = "init"
+                })
                 Slider.InputBegan:Connect(function(input: InputObject, process: boolean)
                     if process then
                         return
@@ -2356,26 +3281,17 @@ function Library:create_ui()
                     end
                     SliderManager:input(input)
                 end)
-                Library:register_component(settings.flag, function(value)
+                Library:register_component(settings.flag, function(value, opts)
                     if type(value) == "number" then
-                        SliderManager:set_percentage(value)
+                        SliderManager:set_percentage(value, opts)
                     end
                 end)
                 return SliderManager
             end
             function ModuleManager:create_dropdown(settings: any)
                 if not settings.Order then
-                    LayoutOrderModule = LayoutOrderModule + 1;
-                end;
-                settings.options = settings.options or {}
-                if #settings.options == 0 then
-                    settings.options = { "None" }
+                    LayoutOrderModule = LayoutOrderModule + 1
                 end
-                settings.maximum_options = settings.maximum_options or #settings.options
-                local DropdownManager = {
-                    _state = false,
-                    _size = 0
-                }
                 local function option_to_text(option: any)
                     if typeof(option) == "string" then
                         return option
@@ -2388,6 +3304,80 @@ function Library:create_ui()
                     end
                     return tostring(option)
                 end
+                local source_options = type(settings.options) == "table" and settings.options or {}
+                local canonical_options = {}
+                local option_by_text = {}
+                for _, option in ipairs(source_options) do
+                    local option_text = option_to_text(option)
+                    if option_text ~= "" and option_by_text[option_text] == nil then
+                        option_by_text[option_text] = option
+                        table.insert(canonical_options, {
+                            text = option_text,
+                            value = option
+                        })
+                    end
+                end
+                if #canonical_options == 0 then
+                    option_by_text.None = "None"
+                    canonical_options[1] = {
+                        text = "None",
+                        value = "None"
+                    }
+                end
+                local function normalize_single(option: any)
+                    local option_text = option_to_text(option)
+                    if option_by_text[option_text] ~= nil then
+                        return option_text
+                    end
+                    return canonical_options[1].text
+                end
+                local function normalize_multi(options: any)
+                    local requested = {}
+                    if type(options) == "table" then
+                        for _, option in pairs(options) do
+                            local option_text = option_to_text(option)
+                            if option_by_text[option_text] ~= nil then
+                                requested[option_text] = true
+                            end
+                        end
+                    end
+                    local normalized = {}
+                    for _, option in ipairs(canonical_options) do
+                        if requested[option.text] then
+                            table.insert(normalized, option.text)
+                        end
+                    end
+                    return normalized
+                end
+                local default_value
+                if settings.multi_dropdown then
+                    default_value = normalize_multi(settings.default or settings.value or {})
+                else
+                    default_value = normalize_single(settings.default or settings.value or canonical_options[1].text)
+                end
+                local internal_flag = Library:_is_internal_flag(settings.flag)
+                local persistent = settings.persist ~= false and not internal_flag
+                Library:register_flag(settings.flag, settings.multi_dropdown and 'table' or 'string', {
+                    default = default_value,
+                    persist = persistent,
+                    export = settings.export ~= false and not internal_flag,
+                    priority = settings.priority or 100
+                })
+                local saved_dropdown_value = Library._config._flags[settings.flag]
+                if saved_dropdown_value == nil then
+                    saved_dropdown_value = default_value
+                end
+                local initial_value = settings.multi_dropdown
+                    and normalize_multi(saved_dropdown_value)
+                    or normalize_single(saved_dropdown_value)
+                settings.maximum_options = math.clamp(tonumber(settings.maximum_options) or #canonical_options, 1, #canonical_options)
+                local DropdownManager = {
+                    _state = false,
+                    _size = 3,
+                    _value = nil,
+                    _option_buttons = {},
+                    _destroyed = false
+                }
                 if self._size == 0 then
                     self._size = 17
                 end
@@ -2413,9 +3403,6 @@ function Library:create_ui()
                     Dropdown.LayoutOrder = LayoutOrderModule;
                 else
                     Dropdown.LayoutOrder = settings.OrderValue;
-                end;
-                if settings.multi_dropdown and type(Library._config._flags[settings.flag]) ~= "table" then
-                    Library._config._flags[settings.flag] = {};
                 end;
                 local TextLabel = Instance.new('TextLabel')
                 if GG.SelectedLanguage == "th" then
@@ -2449,7 +3436,7 @@ function Library:create_ui()
                 local UICorner = Instance.new('UICorner')
                 UICorner.CornerRadius = UDim.new(0, 4)
                 UICorner.Parent = Box
-                local Header = Instance.new('Frame')
+                local Header = Instance.new('TextButton')
                 Header.BorderColor3 = Color3.fromRGB(0, 0, 0)
                 Header.AnchorPoint = Vector2.new(0.5, 0)
                 Header.BackgroundTransparency = 1
@@ -2457,6 +3444,8 @@ function Library:create_ui()
                 Header.Name = 'Header'
                 Header.Size = UDim2.new(0, 207, 0, 22)
                 Header.BorderSizePixel = 0
+                Header.Text = ''
+                Header.AutoButtonColor = false
                 Header.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
                 Header.Parent = Box
                 local CurrentOption = Instance.new('TextLabel')
@@ -2518,106 +3507,83 @@ function Library:create_ui()
                 local BoxLayout = Instance.new('UIListLayout')
                 BoxLayout.SortOrder = Enum.SortOrder.LayoutOrder
                 BoxLayout.Parent = Box
-                function DropdownManager:update(option: string)
+                local function copy_array(values: any)
+                    local copy = {}
+                    if type(values) == "table" then
+                        for index, value in ipairs(values) do
+                            copy[index] = value
+                        end
+                    end
+                    return copy
+                end
+                function DropdownManager:update(option: any, opts: any)
+                    opts = opts or {}
+                    if self._destroyed then
+                        return false
+                    end
+                    local next_value
                     if settings.multi_dropdown then
-                        if type(Library._config._flags[settings.flag]) ~= "table" then
-                            Library._config._flags[settings.flag] = {};
-                        end;
+                        local source_value = option == "load" and Library._config._flags[settings.flag] or option
+                        next_value = normalize_multi(source_value)
+                    else
+                        next_value = normalize_single(option)
+                    end
+                    local stored_value = settings.multi_dropdown and copy_array(next_value) or next_value
+                    local config_changed = not Library:values_equal(Library._config._flags[settings.flag], stored_value)
+                    Library._config._flags[settings.flag] = stored_value
+                    local changed = not Library:values_equal(self._value, next_value)
+                    if changed then
+                        self._value = settings.multi_dropdown and copy_array(next_value) or next_value
                         local selected = {}
-                        for _, saved_value in pairs(Library._config._flags[settings.flag]) do
-                            local option_text = option_to_text(saved_value)
-                            if option_text ~= "" and option_text ~= "Label" and not table.find(selected, option_text) then
-                                table.insert(selected, option_text)
-                            end
-                        end
-                        local OptionsChild = {}
-                        for _, object in Options:GetChildren() do
-                            if object.Name == "Option" then
-                                table.insert(OptionsChild, object.Text)
-                                if table.find(selected, object.Text) then
-                                    object.TextTransparency = 0.2
-                                else
-                                    object.TextTransparency = 0.6
-                                end
-                            end
-                        end
-                        for index = #selected, 1, -1 do
-                            if not table.find(OptionsChild, selected[index]) then
-                                table.remove(selected, index)
-                            end;
-                        end;
-                        CurrentOption.Text = table.concat(selected, ", ");
-                        Library._config._flags[settings.flag] = selected;
-                    else
-                        local option_text = option_to_text(option)
-                        CurrentOption.Text = option_text
-                        for _, object in Options:GetChildren() do
-                            if object.Name == "Option" then
-                                if object.Text == CurrentOption.Text then
-                                    object.TextTransparency = 0.2
-                                else
-                                    object.TextTransparency = 0.6
-                                end
-                            end
-                        end
-                        Library._config._flags[settings.flag] = option_text
-                    end
-                    Config:save(game.GameId, Library._config)
-                    if not settings.multi_dropdown and DropdownManager._state then
-                        DropdownManager:unfold_settings()
-                    end
-                    if settings.callback then
                         if settings.multi_dropdown then
-                            settings.callback(Library._config._flags[settings.flag])
+                            for _, selected_text in ipairs(next_value) do
+                                selected[selected_text] = true
+                            end
+                            CurrentOption.Text = table.concat(next_value, ", ")
                         else
-                            settings.callback(option)
+                            selected[next_value] = true
+                            CurrentOption.Text = next_value
+                        end
+                        for option_text, option_button in pairs(self._option_buttons) do
+                            option_button.TextTransparency = selected[option_text] and 0.2 or 0.6
                         end
                     end
+                    if not settings.multi_dropdown and self._state then
+                        self:unfold_settings(opts)
+                    end
+                    if (changed or config_changed) and opts.persist ~= false and persistent then
+                        Config:save(game.GameId, Library._config)
+                    end
+                    if changed and opts.callback ~= false and settings.callback then
+                        settings.callback(settings.multi_dropdown and copy_array(next_value) or next_value)
+                    end
+                    return changed
                 end
-                local CurrentDropSizeState = 0;
-                function DropdownManager:unfold_settings()
+                function DropdownManager:unfold_settings(opts: any)
+                    opts = opts or {}
                     self._state = not self._state
-                    if self._state then
-                        ModuleManager._multiplier += self._size
-                        CurrentDropSizeState = self._size;
-                        TweenService:Create(Module, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                            Size = UDim2.fromOffset(241, 93 + ModuleManager._size + ModuleManager._multiplier)
-                        }):Play()
-                        TweenService:Create(Module.Options, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                            Size = UDim2.fromOffset(241, ModuleManager._size + ModuleManager._multiplier)
-                        }):Play()
-                        TweenService:Create(Dropdown, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                            Size = UDim2.fromOffset(207, 39 + self._size)
-                        }):Play()
-                        TweenService:Create(Box, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                            Size = UDim2.fromOffset(207, 22 + self._size)
-                        }):Play()
-                        TweenService:Create(Arrow, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                            Rotation = 180
-                        }):Play()
+                    ModuleManager._multiplier += self._state and self._size or -self._size
+                    local module_size = UDim2.fromOffset(241, 93 + ModuleManager._size + ModuleManager._multiplier)
+                    local module_options_size = UDim2.fromOffset(241, ModuleManager._size + ModuleManager._multiplier)
+                    local dropdown_size = UDim2.fromOffset(207, self._state and 39 + self._size or 39)
+                    local box_size = UDim2.fromOffset(207, self._state and 22 + self._size or 22)
+                    local arrow_rotation = self._state and 180 or 0
+                    if opts.animate ~= false then
+                        local tween_info = TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+                        TweenService:Create(Module, tween_info, { Size = module_size }):Play()
+                        TweenService:Create(Module.Options, tween_info, { Size = module_options_size }):Play()
+                        TweenService:Create(Dropdown, tween_info, { Size = dropdown_size }):Play()
+                        TweenService:Create(Box, tween_info, { Size = box_size }):Play()
+                        TweenService:Create(Arrow, tween_info, { Rotation = arrow_rotation }):Play()
                     else
-                        ModuleManager._multiplier -= self._size
-                        CurrentDropSizeState = 0;
-                        TweenService:Create(Module, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                            Size = UDim2.fromOffset(241, 93 + ModuleManager._size + ModuleManager._multiplier)
-                        }):Play()
-                        TweenService:Create(Module.Options, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                            Size = UDim2.fromOffset(241, ModuleManager._size + ModuleManager._multiplier)
-                        }):Play()
-                        TweenService:Create(Dropdown, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                            Size = UDim2.fromOffset(207, 39)
-                        }):Play()
-                        TweenService:Create(Box, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                            Size = UDim2.fromOffset(207, 22)
-                        }):Play()
-                        TweenService:Create(Arrow, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                            Rotation = 0
-                        }):Play()
+                        Module.Size = module_size
+                        Module.Options.Size = module_options_size
+                        Dropdown.Size = dropdown_size
+                        Box.Size = box_size
+                        Arrow.Rotation = arrow_rotation
                     end
                 end
-                if #settings.options > 0 then
-                    DropdownManager._size = 3
-                    for index, value in settings.options do
+                for index, option_data in ipairs(canonical_options) do
                         local Option = Instance.new('TextButton')
                         Option.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Medium, Enum.FontStyle.Normal)
                         Option.Active = false
@@ -2627,7 +3593,7 @@ function Library:create_ui()
                         Option.Size = UDim2.new(0, 186, 0, 16)
                         Option.TextColor3 = Color3.fromRGB(255, 255, 255)
                         Option.BorderColor3 = Color3.fromRGB(0, 0, 0)
-                        Option.Text = option_to_text(value);
+                        Option.Text = option_data.text
                         Option.AutoButtonColor = true
                         Option.Name = 'Option'
                         Option.BackgroundTransparency = 1
@@ -2645,61 +3611,90 @@ function Library:create_ui()
                             NumberSequenceKeypoint.new(1, 1)
                         }
                         UIGradient.Parent = Option
+                        DropdownManager._option_buttons[option_data.text] = Option
                         Option.MouseButton1Click:Connect(function()
                             if settings.multi_dropdown then
-                                if type(Library._config._flags[settings.flag]) ~= "table" then
-                                    Library._config._flags[settings.flag] = {};
-                                end;
-                                local option_text = option_to_text(value)
-                                if table.find(Library._config._flags[settings.flag], option_text) then
-                                    Library:remove_table_value(Library._config._flags[settings.flag], option_text)
-                                else
-                                    table.insert(Library._config._flags[settings.flag], option_text)
+                                local selected = {}
+                                for _, selected_text in ipairs(DropdownManager._value or {}) do
+                                    selected[selected_text] = true
                                 end
-                                DropdownManager:update(option_text)
+                                if selected[option_data.text] then
+                                    selected[option_data.text] = nil
+                                else
+                                    selected[option_data.text] = true
+                                end
+                                local next_selected = {}
+                                for _, canonical_option in ipairs(canonical_options) do
+                                    if selected[canonical_option.text] then
+                                        table.insert(next_selected, canonical_option.text)
+                                    end
+                                end
+                                DropdownManager:update(next_selected)
                             else
-                                DropdownManager:update(value)
+                                DropdownManager:update(option_data.text)
                             end
                         end)
-                        if index > settings.maximum_options then
-                            continue
+                        if index <= settings.maximum_options then
+                            DropdownManager._size += 16
                         end
-                        DropdownManager._size += 16
-                        Options.Size = UDim2.fromOffset(207, DropdownManager._size)
-                    end
                 end
+                Options.Size = UDim2.fromOffset(207, DropdownManager._size)
                 function DropdownManager:New(value)
                     local savedOrder = Dropdown.LayoutOrder
-                    Dropdown:Destroy();
+                    if self._state then
+                        ModuleManager._multiplier -= self._size
+                        self._state = false
+                    end
+                    ModuleManager._size = math.max(17, ModuleManager._size - 47)
+                    self._destroyed = true
+                    if self._component_binding and self._component_binding.manager == self then
+                        self._component_binding.manager = nil
+                        self._component_binding.apply = nil
+                    end
+                    Dropdown:Destroy()
+                    value = value or {}
+                    value.Order = true
                     value.OrderValue = savedOrder
-                    ModuleManager._multiplier -= CurrentDropSizeState
+                    if value.flag == settings.flag then
+                        value._component_binding = self._component_binding
+                    end
                     return ModuleManager:create_dropdown(value)
-                end;
-                Library:register_flag(settings.flag, settings.multi_dropdown and 'table' or 'string')
-                if Library:flag_type(settings.flag, 'string') then
-                    DropdownManager:update(Library._config._flags[settings.flag])
-                elseif Library:flag_type(settings.flag, 'table') then
-                    DropdownManager:update("load")
-                else
-                    DropdownManager:update(settings.options[1])
                 end
-                Dropdown.MouseButton1Click:Connect(function()
+                DropdownManager:update(initial_value, {
+                    persist = false,
+                    animate = false,
+                    callback = true,
+                    source = "init"
+                })
+                Header.MouseButton1Click:Connect(function()
                     DropdownManager:unfold_settings()
                 end)
-                Library:register_component(settings.flag, function(value)
+                local component_binding = settings._component_binding
+                if not component_binding then
+                    component_binding = { flag = settings.flag }
+                    Library:register_component(settings.flag, function(value, opts)
+                        if component_binding.apply then
+                            component_binding.apply(value, opts)
+                        end
+                    end)
+                end
+                DropdownManager._component_binding = component_binding
+                component_binding.manager = DropdownManager
+                component_binding.apply = function(value, opts)
+                    if DropdownManager._destroyed then
+                        return
+                    end
                     if settings.multi_dropdown then
                         if type(value) == "table" then
-                            Library._config._flags[settings.flag] = value
-                            DropdownManager:update("load")
+                            DropdownManager:update(value, opts)
                         end
                     else
-                        DropdownManager:update(value)
+                        DropdownManager:update(value, opts)
                     end
-                end)
+                end
                 return DropdownManager
             end
             function ModuleManager:create_feature(settings)
-                local checked = false;
                 LayoutOrderModule = LayoutOrderModule + 1
                 if self._size == 0 then
                     self._size = 17
@@ -2711,19 +3706,48 @@ function Library:create_ui()
                 Options.Size = UDim2.fromOffset(241, self._size);
                 Library._config._flags = Library._config._flags or {}
                 Library._config._keybinds = Library._config._keybinds or {}
+                local action_only = settings.disablecheck == true
+                local default_checked = settings.default == true
+                local internal_flag = Library:_is_internal_flag(settings.flag)
+                local persistent = not action_only and settings.persist ~= false and not internal_flag
+                local keybind_export = settings.keybind_export ~= false and not internal_flag
                 local saved_feature = Library._config._flags[settings.flag]
+                local migrated_checked = nil
                 if typeof(saved_feature) == "table" then
-                    checked = saved_feature.checked == true
+                    migrated_checked = saved_feature.checked == true
                     if not Library:get_keybind_name(settings.flag) and saved_feature.BIND and saved_feature.BIND ~= "Unknown" then
                         Library:set_keybind(settings.flag, saved_feature.BIND)
                     end
                 elseif typeof(saved_feature) == "boolean" then
-                    checked = saved_feature
-                else
-                    checked = false
+                    migrated_checked = saved_feature
                 end
-                Library._config._flags[settings.flag] = checked
-                Library:register_flag(settings.flag, 'boolean')
+                if action_only then
+                    Library:register_flag(settings.flag, 'boolean', {
+                        default = false,
+                        persist = false,
+                        export = false,
+                        priority = settings.priority or 100,
+                        keybind_export = keybind_export
+                    })
+                    Library._config._flags[settings.flag] = nil
+                else
+                    if migrated_checked ~= nil then
+                        Library._config._flags[settings.flag] = migrated_checked
+                    elseif typeof(saved_feature) ~= "boolean" then
+                        Library._config._flags[settings.flag] = nil
+                    end
+                    Library:register_flag(settings.flag, 'boolean', {
+                        default = default_checked,
+                        persist = persistent,
+                        export = settings.export ~= false and not internal_flag,
+                        priority = settings.priority or 100,
+                        keybind_export = keybind_export
+                    })
+                end
+                local registered_checked = Library._config._flags[settings.flag]
+                local initial_checked = not action_only
+                    and (typeof(registered_checked) == "boolean" and registered_checked or default_checked)
+                local checked = nil
                 if not Library:get_keybind_name(settings.flag) and settings.keybind and settings.keybind ~= "Unknown" then
                     Library:set_keybind(settings.flag, settings.keybind)
                 end
@@ -2786,7 +3810,6 @@ function Library:create_ui()
                 UIStroke.Transparency = 0.5
                 UIStroke.Thickness = 1
                 UIStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-                local keybindLabel
                 local function resize_keybind_box(text)
                     local label_text = text or "..."
                     local font_params = Instance.new("GetTextBoundsParams")
@@ -2804,61 +3827,16 @@ function Library:create_ui()
                     local label_text = key_name or "..."
                     KeybindBox.Text = label_text
                     resize_keybind_box(label_text)
-                    if keybindLabel then
-                        keybindLabel.Text = "[ " .. label_text .. " ]"
-                        if keybindLabel.Parent then
-                            keybindLabel.Parent.Visible = (label_text ~= "..." and label_text ~= "None" and label_text ~= "")
-                        end
-                    end
                 end
                 update_keybind_display(Library:get_keybind_name(settings.flag))
-
                 local function begin_keybind_capture()
-                    if Library._choosing_keybind or not UserInputService.KeyboardEnabled then
-                        return
-                    end
-                    Library._choosing_keybind = true
-                    local previous_keybind = Library:get_keybind_name(settings.flag)
-                    update_keybind_display(nil)
-                    Connections:disconnect("keybind_input_" .. settings.flag)
-                    Connections["keybind_input_" .. settings.flag] = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-                        if gameProcessed then
-                            return
-                        end
-                        local key_name = nil
-                        if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Enum.KeyCode.Escape then
-                            update_keybind_display(previous_keybind)
-                            Library._choosing_keybind = false
-                            Connections:disconnect("keybind_input_" .. settings.flag)
-                            return
-                        elseif input.UserInputType == Enum.UserInputType.Keyboard then
-                            if input.KeyCode == Enum.KeyCode.Unknown then
-                                return
-                            end
-                            if input.KeyCode ~= Enum.KeyCode.Backspace then
-                                key_name = Library:set_keybind(settings.flag, input.KeyCode)
-                            else
-                                Library:clear_keybind(settings.flag)
-                            end
-                        elseif input.UserInputType == Enum.UserInputType.MouseButton2 or input.UserInputType == Enum.UserInputType.MouseButton3 then
-                            Library:clear_keybind(settings.flag)
-                        else
-                            return
-                        end
-                        Config:save(game.GameId, Library._config)
-                        update_keybind_display(key_name)
-                        Library._choosing_keybind = false
-                        Connections:disconnect("keybind_input_" .. settings.flag)
-                    end)
-                end
-                if keybindLabel then
-                    keybindLabel.MouseButton1Click:Connect(begin_keybind_capture)
+                    begin_component_keybind_capture(settings.flag, update_keybind_display)
                 end
                 local UseF_Var = nil;
-                if not settings.disablecheck then
+                if not action_only then
                     local Checkbox = Instance.new("TextButton")
                     Checkbox.Size = UDim2.new(0, 34, 0, 18)
-                    Checkbox.BackgroundColor3 = checked and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(40, 40, 40)
+                    Checkbox.BackgroundColor3 = initial_checked and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(40, 40, 40)
                     Checkbox.Text = ""
                     Checkbox.Parent = RightContainer
                     Checkbox.LayoutOrder = 2;
@@ -2868,38 +3846,65 @@ function Library:create_ui()
                     local Dot = Instance.new("Frame")
                     Dot.Name = "Dot"
                     Dot.Size = UDim2.new(0, 14, 0, 14)
-                    Dot.Position = checked and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
+                    Dot.Position = initial_checked and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
                     Dot.AnchorPoint = Vector2.new(0, 0.5)
-                    Dot.BackgroundColor3 = checked and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(200, 200, 200)
+                    Dot.BackgroundColor3 = initial_checked and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(200, 200, 200)
                     Dot.BorderSizePixel = 0
                     Dot.Parent = Checkbox
                     local DotCorner = Instance.new("UICorner")
                     DotCorner.CornerRadius = UDim.new(1, 0)
                     DotCorner.Parent = Dot
-                    local function setChecked(state: boolean)
-                        checked = state and true or false
-                        Library._config._flags[settings.flag] = checked
-                        Config:save(game.GameId, Library._config)
-                        TweenService:Create(Checkbox, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                            BackgroundColor3 = checked and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(40, 40, 40)
-                        }):Play()
-                        TweenService:Create(Dot, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                            Position = checked and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0),
-                            BackgroundColor3 = checked and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(200, 200, 200)
-                        }):Play()
-
-                        if settings.callback then
+                    local function setChecked(state: boolean, opts: any)
+                        opts = opts or {}
+                        local next_checked = state == true
+                        local config_changed = not Library:values_equal(Library._config._flags[settings.flag], next_checked)
+                        Library._config._flags[settings.flag] = next_checked
+                        if Library:values_equal(checked, next_checked) then
+                            if config_changed and opts.persist ~= false and persistent then
+                                Config:save(game.GameId, Library._config)
+                            end
+                            return false
+                        end
+                        checked = next_checked
+                        local checkbox_color = checked and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(40, 40, 40)
+                        local dot_position = checked and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
+                        local dot_color = checked and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(200, 200, 200)
+                        if opts.animate ~= false then
+                            TweenService:Create(Checkbox, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+                                BackgroundColor3 = checkbox_color
+                            }):Play()
+                            TweenService:Create(Dot, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+                                Position = dot_position,
+                                BackgroundColor3 = dot_color
+                            }):Play()
+                        else
+                            Checkbox.BackgroundColor3 = checkbox_color
+                            Dot.Position = dot_position
+                            Dot.BackgroundColor3 = dot_color
+                        end
+                        if opts.persist ~= false and persistent then
+                            Config:save(game.GameId, Library._config)
+                        end
+                        Library:update_keybind_entry(settings.flag)
+                        if opts.callback ~= false and settings.callback then
                             settings.callback(checked)
                         end
+                        return true
                     end
                     local function toggleState()
                         setChecked(not checked)
                     end
                     UseF_Var = toggleState
                     Checkbox.MouseButton1Click:Connect(toggleState)
-                    Library:register_component(settings.flag, function(value)
-                        setChecked(value and true or false)
+                    Library:register_component(settings.flag, function(value, opts)
+                        setChecked(value == true, opts)
                     end)
+                    setChecked(initial_checked, {
+                        persist = false,
+                        animate = false,
+                        callback = true,
+                        source = "init"
+                    })
                 else
                     UseF_Var = function()
                         if settings.button_callback then
@@ -2917,6 +3922,11 @@ function Library:create_ui()
                     end
                 end)
                 Connections["keybind_press_" .. settings.flag] = keyPressConnection
+                register_managed_keybind_listener(settings.flag, update_keybind_display, FeatureContainer)
+                Library:register_keybind_entry(settings.flag, settings.title or tostring(settings.flag), function()
+                    return checked == true
+                end, update_keybind_display, action_only)
+                Library:update_keybind_entry(settings.flag)
                 FeatureButton.MouseButton1Click:Connect(function()
                     if settings.button_callback then
                         settings.button_callback()
@@ -2932,17 +3942,17 @@ function Library:create_ui()
                         BackgroundColor3 = Color3.fromRGB(25, 25, 25)
                     }):Play()
                 end)
-                if not settings.disablecheck and settings.callback then
-                    settings.callback(checked);
-                end;
                 return FeatureContainer
             end                    
             return ModuleManager
         end
         return TabManager
     end
+    Connections:disconnect('library_visiblity')
     Connections['library_visiblity'] = UserInputService.InputBegan:Connect(function(input: InputObject, process: boolean)
-        if process then return end
+        if process or Library._choosing_keybind or UserInputService:GetFocusedTextBox() then
+            return
+        end
         if input.KeyCode ~= (self._toggle_keybind or Enum.KeyCode.Insert) then
             return
         end
@@ -2953,6 +3963,9 @@ function Library:create_ui()
         self._ui_open = not self._ui_open
         self:change_visiblity(self._ui_open)
     end)
+    Connections:disconnect('mobile_toggle_input_ended')
+    Connections:disconnect('mobile_toggle_drag')
+    Connections:disconnect('mobile_toggle_viewport')
     if UserInputService.TouchEnabled then
         local MobileToggle = Instance.new("ImageButton")
         MobileToggle.Name = "MobileToggle"
@@ -2962,7 +3975,17 @@ function Library:create_ui()
         MobileToggle.Parent = self._ui
         Library._config._library = Library._config._library or {}
         local savedPos = Library._config._library._mobile_toggle_pos
-        MobileToggle.Position = savedPos and UDim2.new(savedPos[1], savedPos[2], savedPos[3], savedPos[4]) or UDim2.new(0, 50, 0, 50)
+        local function valid_position_component(value: any)
+            return type(value) == "number" and value == value and math.abs(value) < math.huge
+        end
+        local saved_position_valid = type(savedPos) == "table"
+            and valid_position_component(savedPos[1])
+            and valid_position_component(savedPos[2])
+            and valid_position_component(savedPos[3])
+            and valid_position_component(savedPos[4])
+        MobileToggle.Position = saved_position_valid
+            and UDim2.new(savedPos[1], savedPos[2], savedPos[3], savedPos[4])
+            or UDim2.new(0, 50, 0, 50)
         local UICorner = Instance.new("UICorner")
         UICorner.CornerRadius = UDim.new(0.5, 0)
         UICorner.Parent = MobileToggle
@@ -2982,15 +4005,55 @@ function Library:create_ui()
         local function clamp_position(pos)
             local viewport = workspace.CurrentCamera.ViewportSize
             local size = MobileToggle.AbsoluteSize
+            local width = size.X > 0 and size.X or MobileToggle.Size.X.Offset
+            local height = size.Y > 0 and size.Y or MobileToggle.Size.Y.Offset
             local margin = 12
             local minX = margin
-            local maxX = viewport.X - size.X - margin
+            local maxX = viewport.X - width - margin
             local minY = margin
-            local maxY = viewport.Y - size.Y - margin
-            local x = math.clamp(pos.X.Offset, minX, math.max(minX, maxX))
-            local y = math.clamp(pos.Y.Offset, minY, math.max(minY, maxY))
+            local maxY = viewport.Y - height - margin
+            local absolute_x = pos.X.Scale * viewport.X + pos.X.Offset
+            local absolute_y = pos.Y.Scale * viewport.Y + pos.Y.Offset
+            local x = math.clamp(absolute_x, minX, math.max(minX, maxX))
+            local y = math.clamp(absolute_y, minY, math.max(minY, maxY))
             return UDim2.new(0, x, 0, y)
         end
+        local function save_mobile_position(position)
+            local serialized = {
+                position.X.Scale, position.X.Offset,
+                position.Y.Scale, position.Y.Offset
+            }
+            if Library:values_equal(Library._config._library._mobile_toggle_pos, serialized) then
+                return
+            end
+            Library._config._library._mobile_toggle_pos = serialized
+            Config:save(game.GameId, Library._config)
+        end
+        local function clamp_mobile_position(persist: boolean)
+            if not MobileToggle.Parent then
+                return
+            end
+            local clamped = clamp_position(MobileToggle.Position)
+            MobileToggle.Position = clamped
+            if persist then
+                save_mobile_position(clamped)
+            end
+        end
+        task.defer(function()
+            clamp_mobile_position(savedPos ~= nil)
+        end)
+        local viewport_update_token = 0
+        Connections:disconnect('mobile_toggle_viewport')
+        Connections['mobile_toggle_viewport'] = workspace.CurrentCamera:GetPropertyChangedSignal('ViewportSize'):Connect(function()
+            viewport_update_token += 1
+            local update_token = viewport_update_token
+            clamp_mobile_position(false)
+            task.delay(0.2, function()
+                if update_token == viewport_update_token and MobileToggle.Parent then
+                    save_mobile_position(MobileToggle.Position)
+                end
+            end)
+        end)
         MobileToggle.InputBegan:Connect(function(input)
             if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and not dragging then
                 dragging = true
@@ -2998,28 +4061,20 @@ function Library:create_ui()
                 dragStart = input.Position
                 startPos = MobileToggle.Position
                 activeInput = input
-                if Connections['mobile_toggle_input_ended'] then Connections['mobile_toggle_input_ended']:Disconnect() end
+                Connections:disconnect('mobile_toggle_input_ended')
                 Connections['mobile_toggle_input_ended'] = input.Changed:Connect(function()
-                    if input.UserInputState == Enum.UserInputState.End then
+                    if input.UserInputState == Enum.UserInputState.End or input.UserInputState == Enum.UserInputState.Cancel then
                         dragging = false
                         activeInput = nil
-                        if Connections['mobile_toggle_input_ended'] then
-                            Connections['mobile_toggle_input_ended']:Disconnect()
-                            Connections['mobile_toggle_input_ended'] = nil
-                        end
+                        Connections:disconnect('mobile_toggle_input_ended')
                         if dragMoved then
-                            local clamped = clamp_position(MobileToggle.Position)
-                            MobileToggle.Position = clamped
-                            Library._config._library._mobile_toggle_pos = {
-                                clamped.X.Scale, clamped.X.Offset,
-                                clamped.Y.Scale, clamped.Y.Offset
-                            }
-                            Config:save(game.GameId, Library._config)
+                            clamp_mobile_position(true)
                         end
                     end
                 end)
             end
         end)
+        Connections:disconnect('mobile_toggle_drag')
         Connections['mobile_toggle_drag'] = UserInputService.InputChanged:Connect(function(input)
             if not dragging then return end
             if input.UserInputType == Enum.UserInputType.Touch and input ~= activeInput then return end
@@ -3034,7 +4089,7 @@ function Library:create_ui()
                 end
             end
         end)
-        MobileToggle.MouseButton1Click:Connect(function()
+        MobileToggle.Activated:Connect(function()
             if dragMoved then
                 return
             end
@@ -3042,6 +4097,9 @@ function Library:create_ui()
             self:change_visiblity(self._ui_open)
         end)
     end
+    self:removed(function()
+        Library._choosing_keybind = false
+    end)
     return self
 end
 return Library

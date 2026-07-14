@@ -1,9 +1,3 @@
---- fixed 
-
---- if ur gonna mod it make sure it dont use the same theme as roni thanks
-
-
-
 getgenv().GG = getgenv().GG or {}
 GG.SelectedLanguage = GG.SelectedLanguage or "en"
 local SelectedLanguage = GG.SelectedLanguage
@@ -32,14 +26,19 @@ local Players = cloneref(game:GetService('Players'))
 local CoreGui = cloneref(game:GetService('CoreGui'))
 local Debris = cloneref(game:GetService('Debris'))
 local mouse = Players.LocalPlayer:GetMouse()
-local old_roni = CoreGui:FindFirstChild('roni')
-if old_roni then
-    Debris:AddItem(old_roni, 0)
+for _, gui in pairs((gethui and gethui():GetChildren()) or CoreGui:GetChildren()) do
+    if gui:FindFirstChild('RoniSignature') then
+        Debris:AddItem(gui, 0)
+    end
+end
+local old_Allusive = CoreGui:FindFirstChild('roni')
+if old_Allusive then
+    Debris:AddItem(old_Allusive, 0)
 end
 if not isfolder("roni") then
     makefolder("roni")
 end
-local ConfigFolder = "roni"
+local ConfigFolder = "Allusive"
 if not isfolder(ConfigFolder) then
     makefolder(ConfigFolder)
 end
@@ -1595,21 +1594,25 @@ function Library:register_keybind_entry(flag: any, title: string, get_state: any
     self:update_keybind_entry(flag)
 end
 function Library:create_ui()
-    local old_roni = CoreGui:FindFirstChild('roni')
-    if old_roni then
-        Debris:AddItem(old_roni, 0)
+    local old_Allusive = CoreGui:FindFirstChild('roni')
+    if old_Allusive then
+        Debris:AddItem(old_Allusive, 0)
     end
     local protect_gui = protect_gui or protectgui or (syn and syn.protect_gui) or function() end
-    local roni = Instance.new('ScreenGui')
-    roni.ResetOnSpawn = false
-    roni.Name = Util:random_string()
+    local Allusive = Instance.new('ScreenGui')
+    Allusive.ResetOnSpawn = false
+    Allusive.Name = Util:random_string()
+    
+    local signature = Instance.new('StringValue')
+    signature.Name = 'RoniSignature'
+    signature.Parent = Allusive
 
-    roni.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+    Allusive.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
     if RunService:IsStudio() then
-        roni.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+        Allusive.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
     else
-        protect_gui(roni)
-        roni.Parent = (gethui and gethui()) or CoreGui
+        protect_gui(Allusive)
+        Allusive.Parent = (gethui and gethui()) or CoreGui
         local hooking = hookfunc or hookfunction
         if hooking then
             pcall(function()
@@ -1630,7 +1633,7 @@ function Library:create_ui()
     Container.Size = UDim2.new(0, 0, 0, 0)
     Container.Active = true
     Container.BorderSizePixel = 0
-    Container.Parent = roni
+    Container.Parent = Allusive
     local UICorner = Instance.new('UICorner')
     UICorner.CornerRadius = UDim.new(0, 10)
     UICorner.Parent = Container
@@ -1740,7 +1743,7 @@ function Library:create_ui()
     local UIScale = Instance.new('UIScale')
     UIScale.Parent = Container
     self._container_uiscale = UIScale
-    self._ui = roni
+    self._ui = Allusive
     local active_drag_input = nil
     local function on_drag(input: InputObject, process: boolean)
         if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and not self._dragging then 
@@ -1801,7 +1804,7 @@ function Library:create_ui()
         end;
     end;
     function self:UIVisiblity()
-        roni.Enabled = not roni.Enabled;
+        Allusive.Enabled = not Allusive.Enabled;
     end;
     function self:change_visiblity(state: boolean)
         if state then
@@ -1820,7 +1823,7 @@ function Library:create_ui()
         end
         self._ui_loaded = true
         local content = {}
-        for _, object in roni:GetDescendants() do
+        for _, object in Allusive:GetDescendants() do
             if not object:IsA('ImageLabel') then
                 continue
             end
@@ -2300,7 +2303,7 @@ function Library:create_ui()
                 ModuleName.Text = settings.title or "Skibidi"
             else
                 ModuleName.RichText = true
-                ModuleName.Text = settings.richtext or "<font color='rgb(255,0,0)'>roni</font> user"
+                ModuleName.Text = settings.richtext or "<font color='rgb(255,0,0)'>Allusive</font> user"
             end;
             ModuleName.Name = 'ModuleName'
             ModuleName.Size = UDim2.new(0, 205, 0, 13)
@@ -2486,7 +2489,7 @@ function Library:create_ui()
                     Body.Text = settings.text or "Skibidi"
                 else
                     Body.RichText = true
-                    Body.Text = settings.richtext or "<font color='rgb(255,0,0)'>roni</font> user"
+                    Body.Text = settings.richtext or "<font color='rgb(255,0,0)'>Allusive</font> user"
                 end
                 Body.Size = UDim2.new(1, -10, 0, 20)
                 Body.Position = UDim2.new(0, 5, 0, 30)
@@ -2540,7 +2543,7 @@ function Library:create_ui()
                 if not body_is_rich then
                     Body.Text = settings.text or "Skibidi" 
                 else
-                    Body.Text = settings.richtext or "<font color='rgb(255,0,0)'>roni</font> user" 
+                    Body.Text = settings.richtext or "<font color='rgb(255,0,0)'>Allusive</font> user" 
                 end
                 Body.Size = UDim2.new(1, -10, 0, 0)
                 Body.Position = UDim2.new(0, 5, 0, 5)
@@ -2567,7 +2570,7 @@ function Library:create_ui()
                     if not body_is_rich then
                         Body.Text = new_settings.text or "Skibidi" 
                     else
-                        Body.Text = new_settings.richtext or "<font color='rgb(255,0,0)'>roni</font> user" 
+                        Body.Text = new_settings.richtext or "<font color='rgb(255,0,0)'>Allusive</font> user" 
                     end
                 end;
                 return TextManager

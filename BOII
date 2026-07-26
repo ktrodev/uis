@@ -1,4 +1,4 @@
-getgenv().GG = getgenv().GG or {}
+ getgenv().GG = getgenv().GG or {}
 GG.SelectedLanguage = GG.SelectedLanguage or "en"
 local SelectedLanguage = GG.SelectedLanguage
 local cloneref = cloneref or function(instance)
@@ -1808,13 +1808,26 @@ function Library:create_ui()
     end;
     function self:change_visiblity(state: boolean)
         if state then
+            Container.Visible = true
             TweenService:Create(Container, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
                 Size = UDim2.fromOffset(698, 479)
             }):Play()
         else
-            TweenService:Create(Container, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                Size = UDim2.fromOffset(104.5, 52)
-            }):Play()
+            if not UserInputService.TouchEnabled then
+                local hideTween = TweenService:Create(Container, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {
+                    Size = UDim2.fromOffset(0, 0)
+                })
+                hideTween:Play()
+                hideTween.Completed:Once(function()
+                    if not self._ui_open then
+                        Container.Visible = false
+                    end
+                end)
+            else
+                TweenService:Create(Container, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+                    Size = UDim2.fromOffset(104.5, 52)
+                }):Play()
+            end
         end
     end
     function self:load()
@@ -1854,7 +1867,7 @@ function Library:create_ui()
         local ListFlag = 'roni_cfg_list'
         for _, flag in ipairs({
             NameFlag, CodeFlag, ListFlag,
-            'roni_cfg_module',
+            'roni_cfg_module', 'roni_cfg_ui_settings',
             'roni_cfg_save', 'roni_cfg_load', 'roni_cfg_delete',
             'roni_cfg_export', 'roni_cfg_import'
         }) do
@@ -2048,6 +2061,21 @@ function Library:create_ui()
                     return
                 end
                 self.SendNotification({ title = 'Configs', text = 'Config imported and applied.', type = 'success', duration = 4 })
+            end
+        })
+        Module:create_divider({ title = 'UI Settings', showtopic = true })
+        Module:create_dropdown({
+            title = 'Toggle Key',
+            flag = 'ui_toggle_key',
+            options = {'Insert', 'Home', 'End', 'Delete', 'RightShift', 'LeftAlt', 'RightAlt', 'RightControl', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9'},
+            default = 'Insert',
+            persist = true,
+            export = false,
+            callback = function(selected)
+                local ok, keyCode = pcall(function() return Enum.KeyCode[selected] end)
+                if ok and keyCode then
+                    self._toggle_keybind = keyCode
+                end
             end
         })
     end

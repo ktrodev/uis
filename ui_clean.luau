@@ -1,4 +1,7 @@
- if getfenv()['AmferRunning'] then return end
+--- fixed
+
+
+if getfenv()['AmferRunning'] then return end
 getfenv()['AmferRunning'] = true
 
 local __RuntimeEnvironmentOK, __RuntimeEnvironment = pcall(function()
@@ -35,7 +38,7 @@ local function __InstallRuntimeHooks()
 		local __InDebugHook = false
 		local __DebugHook
 		__DebugHook = function(...)
-			if __InDebugHook then
+			if __InDebugHook or checkcaller() then
 				return __OriginalDebugInfo(...)
 			end
 			__InDebugHook = true
@@ -59,24 +62,22 @@ local function __InstallRuntimeHooks()
 				error(tostring(results), 2)
 			end
 
-			if not checkcaller() then
-				local replacementSource
-				if isDirectCall and (type(subject) == "function" or subject == __OriginalDebugInfo or subject == debug.info) then
-					replacementSource = "[C]"
-				elseif (isDirectCall or isThreadCall) and (subject == 4 or subject == 1 or subject == 2 or subject == 3) then
-					replacementSource = "ReplicatedStorage.Controllers.SwordsController"
-				end
+			local replacementSource
+			if isDirectCall and (type(subject) == "function" or subject == __OriginalDebugInfo or subject == debug.info) then
+				replacementSource = "[C]"
+			elseif (isDirectCall or isThreadCall) and (subject == 4 or subject == 1 or subject == 2 or subject == 3) then
+				replacementSource = "ReplicatedStorage.Controllers.SwordsController"
+			end
 
-				if replacementSource and type(options) == "string" then
-					local resultIndex = 1
-					for index = 1, #options do
-						local option = string.sub(options, index, index)
-						if option == "s" then
-							results[resultIndex] = replacementSource
-							break
-						end
-						resultIndex = resultIndex + (option == "a" and 2 or 1)
+			if replacementSource and type(options) == "string" then
+				local resultIndex = 1
+				for index = 1, #options do
+					local option = string.sub(options, index, index)
+					if option == "s" then
+						results[resultIndex] = replacementSource
+						break
 					end
+					resultIndex = resultIndex + (option == "a" and 2 or 1)
 				end
 			end
 
@@ -97,7 +98,7 @@ local function __InstallRuntimeHooks()
 		local __InGetFenvHook = false
 		local __GetFenvHook
 		__GetFenvHook = function(...)
-			if __InGetFenvHook then
+			if __InGetFenvHook or checkcaller() then
 				return __OriginalGetFenv(...)
 			end
 			__InGetFenvHook = true
@@ -114,7 +115,7 @@ local function __InstallRuntimeHooks()
 			end
 
 			if count == 1 and type(target) == "number" then
-				if not checkcaller() and target >= 1 and target <= 10 then
+				if target >= 1 and target <= 10 then
 					__InGetFenvHook = false
 					return __RuntimeHookState.CleanEnvironment or __RuntimeEnvironment
 				end

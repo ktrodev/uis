@@ -1,3045 +1,1746 @@
-getgenv().GG = getgenv().GG or {}
-GG.SelectedLanguage = GG.SelectedLanguage or "en"
-local SelectedLanguage = GG.SelectedLanguage
-local cloneref = cloneref or function(instance)
-    return instance
+ if getfenv()['AmferRunning'] then return end
+getfenv()['AmferRunning'] = true
+
+local __RuntimeEnvironmentOK, __RuntimeEnvironment = pcall(function()
+	return getrenv()
+end)
+if not __RuntimeEnvironmentOK or type(__RuntimeEnvironment) ~= "table" then
+	getfenv()["AmferRunning"] = nil
+	error("getrenv() did not return a runtime environment")
 end
-function convertStringToTable(inputString)
-    local result = {}
-    for value in string.gmatch(inputString, "([^,]+)") do
-        local trimmedValue = value:match("^%s*(.-)%s*$")
-        table.insert(result, trimmedValue)
-    end
-    return result
+local __RuntimeDebug = type(__RuntimeEnvironment.debug) == "table" and __RuntimeEnvironment.debug or debug
+local __RuntimeDebugInfo = __RuntimeDebug.info or debug.info
+local __RuntimeGetFenv = __RuntimeEnvironment.getfenv or getfenv
+local __RuntimeHookState = getgenv().__RoniRuntimeHooksV2
+if type(__RuntimeHookState) ~= "table" then
+	__RuntimeHookState = { CleanEnvironment = __RuntimeEnvironment }
+	getgenv().__RoniRuntimeHooksV2 = __RuntimeHookState
 end
-function convertTableToString(inputTable)
-    return table.concat(inputTable, ", ")
+__RuntimeHookState.CleanEnvironment = __RuntimeHookState.CleanEnvironment or __RuntimeEnvironment
+local __OriginalDebugInfo = __RuntimeHookState.DebugInfoOriginal or __RuntimeDebugInfo
+local __OriginalGetFenv = __RuntimeHookState.GetFenvOriginal or __RuntimeGetFenv
+local __RuntimeHooksInstalled = false
+
+local function __InstallRuntimeHooks()
+	if __RuntimeHooksInstalled then
+		return
+	end
+	if typeof(hookfunction) ~= "function" or typeof(checkcaller) ~= "function" then
+		warn("Roni runtime hooks require hookfunction and checkcaller")
+		return
+	end
+
+	local __DebugHookInstalled = typeof(__RuntimeHookState.DebugInfoOriginal) == "function"
+	if not __DebugHookInstalled and typeof(__RuntimeDebugInfo) == "function" then
+		local __InDebugHook = false
+		local __DebugHook
+		__DebugHook = function(...)
+			if __InDebugHook then
+				return __OriginalDebugInfo(...)
+			end
+			__InDebugHook = true
+
+			local args = table.pack(...)
+			local isDirectCall = args.n == 2
+			local isThreadCall = args.n == 3 and type(args[1]) == "thread"
+			local subject = isDirectCall and args[1] or (isThreadCall and args[2] or nil)
+			local options = isDirectCall and args[2] or (isThreadCall and args[3] or nil)
+
+			if isDirectCall and type(subject) == "number" and subject >= 1 then
+				args[1] = subject + 1
+			end
+
+			local success, results = pcall(function()
+				return table.pack(__OriginalDebugInfo(table.unpack(args, 1, args.n)))
+			end)
+
+			if not success then
+				__InDebugHook = false
+				error(tostring(results), 2)
+			end
+
+			if not checkcaller() then
+				local replacementSource
+				if isDirectCall and (type(subject) == "function" or subject == __OriginalDebugInfo or subject == debug.info) then
+					replacementSource = "[C]"
+				elseif (isDirectCall or isThreadCall) and (subject == 4 or subject == 1 or subject == 2 or subject == 3) then
+					replacementSource = "ReplicatedStorage.Controllers.SwordsController"
+				end
+
+				if replacementSource and type(options) == "string" then
+					local resultIndex = 1
+					for index = 1, #options do
+						local option = string.sub(options, index, index)
+						if option == "s" then
+							results[resultIndex] = replacementSource
+							break
+						end
+						resultIndex = resultIndex + (option == "a" and 2 or 1)
+					end
+				end
+			end
+
+			__InDebugHook = false
+			return table.unpack(results, 1, results.n)
+		end
+
+		local ok, original = pcall(hookfunction, __RuntimeDebugInfo, __DebugHook)
+		if ok and typeof(original) == "function" then
+			__OriginalDebugInfo = original
+			__RuntimeHookState.DebugInfoOriginal = original
+			__DebugHookInstalled = true
+		end
+	end
+
+	local __GetFenvHookInstalled = typeof(__RuntimeHookState.GetFenvOriginal) == "function"
+	if not __GetFenvHookInstalled and typeof(__RuntimeGetFenv) == "function" then
+		local __InGetFenvHook = false
+		local __GetFenvHook
+		__GetFenvHook = function(...)
+			if __InGetFenvHook then
+				return __OriginalGetFenv(...)
+			end
+			__InGetFenvHook = true
+
+			local count = select("#", ...)
+			local target = ...
+			if count == 0 or (count == 1 and target == nil) then
+				local ok, res = pcall(__OriginalGetFenv, 2)
+				__InGetFenvHook = false
+				if ok then return res end
+				local ok2, res2 = pcall(__OriginalGetFenv, 1)
+				if ok2 then return res2 end
+				return __RuntimeEnvironment
+			end
+
+			if count == 1 and type(target) == "number" then
+				if not checkcaller() and target >= 1 and target <= 10 then
+					__InGetFenvHook = false
+					return __RuntimeHookState.CleanEnvironment or __RuntimeEnvironment
+				end
+				if target == 0 then
+					local ok, res = pcall(__OriginalGetFenv, 0)
+					__InGetFenvHook = false
+					if ok then return res end
+					return __RuntimeEnvironment
+				elseif target < 0 then
+					local ok, res = pcall(__OriginalGetFenv, target)
+					__InGetFenvHook = false
+					if ok then return res end
+					return __RuntimeEnvironment
+				end
+				local ok, res = pcall(__OriginalGetFenv, target + 1)
+				if not ok then
+					ok, res = pcall(__OriginalGetFenv, target)
+				end
+				__InGetFenvHook = false
+				if ok then return res else error("invalid argument #1 to 'getfenv' (invalid level)", 2) end
+			end
+			local ok, res = pcall(__OriginalGetFenv, ...)
+			__InGetFenvHook = false
+			if ok then return res else error(tostring(res), 2) end
+		end
+
+		local ok, original = pcall(hookfunction, __RuntimeGetFenv, __GetFenvHook)
+		if ok and typeof(original) == "function" then
+			__OriginalGetFenv = original
+			__RuntimeHookState.GetFenvOriginal = original
+			__GetFenvHookInstalled = true
+		end
+	end
+
+	__RuntimeHooksInstalled = __DebugHookInstalled and __GetFenvHookInstalled
 end
-local UserInputService = cloneref(game:GetService('UserInputService'))
-local ContentProvider = cloneref(game:GetService('ContentProvider'))
-local TweenService = cloneref(game:GetService('TweenService'))
-local HttpService = cloneref(game:GetService('HttpService'))
-local TextService = cloneref(game:GetService('TextService'))
-local RunService = cloneref(game:GetService('RunService'))
-local Lighting = cloneref(game:GetService('Lighting'))
-local Players = cloneref(game:GetService('Players'))
-local CoreGui = cloneref(game:GetService('CoreGui'))
-local Debris = cloneref(game:GetService('Debris'))
-local mouse = Players.LocalPlayer:GetMouse()
-for _, gui in pairs((gethui and gethui():GetChildren()) or CoreGui:GetChildren()) do
-    if gui:FindFirstChild('RoniSignature') then
-        Debris:AddItem(gui, 0)
-    end
-end
-local old_Allusive = CoreGui:FindFirstChild('roni')
-if old_Allusive then
-    Debris:AddItem(old_Allusive, 0)
-end
-if not isfolder("roni") then
-    makefolder("roni")
-end
-local ConfigFolder = "Allusive"
-if not isfolder(ConfigFolder) then
-    makefolder(ConfigFolder)
-end
-local Connections = {}
-Connections.disconnect = function(self, connection)
-    if not self[connection] then
-        return
-    end
-    if typeof(self[connection]) == 'RBXScriptConnection' then
-        self[connection]:Disconnect()
-    end
-    self[connection] = nil
-end
-Connections.disconnect_all = function(self)
-    for key, value in pairs(self) do
-        if typeof(value) == 'RBXScriptConnection' then
-            value:Disconnect()
-            self[key] = nil
-        end
-    end
-end
-local Util = {}
-Util.map = function(self: any, value: number, in_minimum: number, in_maximum: number, out_minimum: number, out_maximum: number)
-    return (value - in_minimum) * (out_maximum - out_minimum) / (in_maximum - in_minimum) + out_minimum
-end
-Util.viewport_point_to_world = function(self: any, location: any, distance: number)
-    local unit_ray = workspace.CurrentCamera:ScreenPointToRay(location.X, location.Y)
-    return unit_ray.Origin + unit_ray.Direction * distance
-end
-Util.get_offset = function(self: any)
-    local viewport_size_Y = workspace.CurrentCamera.ViewportSize.Y
-    return self:map(viewport_size_Y, 0, 2560, 8, 56)
-end
-Util.random_string = function(self: any)
-    local array = {}
-    for i = 1, math.random(10, 20) do
-        array[i] = string.char(math.random(97, 122))
-    end
-    return table.concat(array)
-end
-Util.is_mouse_over_frame = function(self: any, frame: Frame)
-    local abs_pos, abs_size = frame.AbsolutePosition, frame.AbsoluteSize
-    if mouse.X >= abs_pos.X and mouse.X <= abs_pos.X + abs_size.X and mouse.Y >= abs_pos.Y and mouse.Y <= abs_pos.Y + abs_size.Y then
-        return true
-    end
-    return false
-end
-Util.rounding = function(self: any, num, numDecimalPlaces)
-    local mult = 10^(numDecimalPlaces or 0)
-    return math.floor(num * mult + 0.5) / mult
-end
-Util.new_input = function(self: any, frame: Frame, callback)
-    local btn = Instance.new('TextButton', frame)
-    btn.ZIndex = frame.ZIndex + 10
-    btn.Size = UDim2.fromScale(1, 1)
-    btn.BackgroundTransparency = 1
-    btn.TextTransparency = 1
-    btn.Text = ""
-    if callback then
-        btn.MouseButton1Click:Connect(callback)
-    end
-    return btn
-end
-local Base64 = {}
-do
-    local chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-    local encode_map = {}
-    local decode_map = {}
-    for i = 1, #chars do
-        local c = chars:sub(i, i)
-        encode_map[i - 1] = c
-        decode_map[c] = i - 1
-    end
-    function Base64.encode(input: string)
-        input = tostring(input or "")
-        local out, len = {}, #input
-        local i = 1
-        local function push(x: number)
-            out[#out + 1] = encode_map[x] or '='
-        end
-        while i <= len do
-            local a = input:byte(i)
-            local b = input:byte(i + 1)
-            local c = input:byte(i + 2)
-            push(bit32.rshift(a, 2))
-            if b then
-                push(bit32.bor(bit32.lshift(bit32.band(a, 3), 4), bit32.rshift(b, 4)))
-                if c then
-                    push(bit32.bor(bit32.lshift(bit32.band(b, 15), 2), bit32.rshift(c, 6)))
-                    push(bit32.band(c, 63))
-                else
-                    push(bit32.lshift(bit32.band(b, 15), 2))
-                    out[#out + 1] = '='
-                end
-            else
-                push(bit32.lshift(bit32.band(a, 3), 4))
-                out[#out + 1] = '='
-                out[#out + 1] = '='
-            end
-            i = i + 3
-        end
-        return table.concat(out)
-    end
-    function Base64.decode(input: string)
-        input = tostring(input or ""):gsub('[^%a%d%+%/%=]', '')
-        local out = {}
-        local i = 1
-        local len = #input
-        local function byte_at(pos: number)
-            local ch = input:sub(pos, pos)
-            if ch == '' or ch == '=' then return nil end
-            return decode_map[ch]
-        end
-        while i <= len do
-            local a = byte_at(i)
-            local b = byte_at(i + 1)
-            local c = byte_at(i + 2)
-            local d = byte_at(i + 3)
-            if not a or not b then break end
-            out[#out + 1] = string.char(bit32.band(bit32.bor(bit32.lshift(a, 2), bit32.rshift(b, 4)), 0xFF))
-            if c then
-                out[#out + 1] = string.char(bit32.band(bit32.bor(bit32.lshift(bit32.band(b, 15), 4), bit32.rshift(c, 2)), 0xFF))
-                if d then
-                    out[#out + 1] = string.char(bit32.band(bit32.bor(bit32.lshift(bit32.band(c, 3), 6), d), 0xFF))
-                end
-            end
-            i = i + 4
-        end
-        return table.concat(out)
-    end
-end
-local AcrylicBlur = {}
-AcrylicBlur.__index = AcrylicBlur
-function AcrylicBlur.new(object: GuiObject)
-    local self = setmetatable({
-        _object = object,
-        _folder = nil,
-        _frame = nil,
-        _root = nil
-    }, AcrylicBlur)
-    self:setup()
-    return self
-end
-function AcrylicBlur:create_folder()
-    local old_folder = workspace.CurrentCamera:FindFirstChild('AcrylicBlur')
-    if old_folder then
-        Debris:AddItem(old_folder, 0)
-    end
-    local folder = Instance.new('Folder')
-    folder.Name = 'AcrylicBlur'
-    folder.Parent = workspace.CurrentCamera
-    self._folder = folder
-end
-function AcrylicBlur:create_depth_of_fields()
-    local depth_of_fields = Lighting:FindFirstChild('AcrylicBlur') or Instance.new('DepthOfFieldEffect')
-    depth_of_fields.FarIntensity = 0
-    depth_of_fields.FocusDistance = 0.05
-    depth_of_fields.InFocusRadius = 0.1
-    depth_of_fields.NearIntensity = 1
-    depth_of_fields.Name = 'AcrylicBlur'
-    depth_of_fields.Parent = Lighting
-    return depth_of_fields
-end
-function AcrylicBlur:create_frame()
-    local frame = Instance.new('Frame')
-    frame.Size = UDim2.new(1, 0, 1, 0)
-    frame.Position = UDim2.new(0.5, 0, 0.5, 0)
-    frame.AnchorPoint = Vector2.new(0.5, 0.5)
-    frame.BackgroundTransparency = 1
-    frame.Parent = self._object
-    self._frame = frame
-end
-function AcrylicBlur:create_root()
-    local part = Instance.new('Part')
-    part.Name = 'Root'
-    part.Color = Color3.new(0, 0, 0)
-    part.Material = Enum.Material.Glass
-    part.Size = Vector3.new(1, 1, 0)  
-    part.Anchored = true
-    part.CanCollide = false
-    part.CanQuery = false
-    part.Locked = true
-    part.CastShadow = false
-    part.Transparency = 0.98
-    part.Parent = self._folder
-    local specialMesh = Instance.new('SpecialMesh')
-    specialMesh.MeshType = Enum.MeshType.Brick  
-    specialMesh.Offset = Vector3.new(0, 0, -0.000001)  
-    specialMesh.Parent = part
-    self._root = part  
-end
-function AcrylicBlur:setup()
-    self:create_depth_of_fields()
-    self:create_folder()
-    self:create_root()
-    self:create_frame()
-    self:render(0.001)
-    self:check_quality_level()
-end
-function AcrylicBlur:render(distance: number)
-    local positions = {
-        top_left = Vector2.new(),
-        top_right = Vector2.new(),
-        bottom_right = Vector2.new(),
-    }
-    local function update_positions(size: any, position: any)
-        positions.top_left = position
-        positions.top_right = position + Vector2.new(size.X, 0)
-        positions.bottom_right = position + size
-    end
-    local function update()
-        local top_left = positions.top_left
-        local top_right = positions.top_right
-        local bottom_right = positions.bottom_right
-        local top_left3D = Util:viewport_point_to_world(top_left, distance)
-        local top_right3D = Util:viewport_point_to_world(top_right, distance)
-        local bottom_right3D = Util:viewport_point_to_world(bottom_right, distance)
-        local width = (top_right3D - top_left3D).Magnitude
-        local height = (top_right3D - bottom_right3D).Magnitude
-        if not self._root then
-            return
-        end
-        self._root.CFrame = CFrame.fromMatrix((top_left3D + bottom_right3D) / 2, workspace.CurrentCamera.CFrame.XVector, workspace.CurrentCamera.CFrame.YVector, workspace.CurrentCamera.CFrame.ZVector)
-        self._root.Mesh.Scale = Vector3.new(width, height, 0)
-    end
-    local function on_change()
-        local offset = Util:get_offset()
-        local size = self._frame.AbsoluteSize - Vector2.new(offset, offset)
-        local position = self._frame.AbsolutePosition + Vector2.new(offset / 2, offset / 2)
-        update_positions(size, position)
-        update()
-    end
-    local id = tostring(self)
-    local function bind_camera()
-        Connections.disconnect(Connections, 'cframe_update_' .. id)
-        Connections.disconnect(Connections, 'viewport_size_update_' .. id)
-        Connections.disconnect(Connections, 'field_of_view_update_' .. id)
-        Connections['cframe_update_' .. id] = workspace.CurrentCamera:GetPropertyChangedSignal('CFrame'):Connect(update)
-        Connections['viewport_size_update_' .. id] = workspace.CurrentCamera:GetPropertyChangedSignal('ViewportSize'):Connect(update)
-        Connections['field_of_view_update_' .. id] = workspace.CurrentCamera:GetPropertyChangedSignal('FieldOfView'):Connect(update)
-    end
-    Connections['camera_change_' .. id] = workspace:GetPropertyChangedSignal('CurrentCamera'):Connect(function()
-        bind_camera()
-        update()
-    end)
-    bind_camera()
-    Connections['frame_absolute_position_' .. id] = self._frame:GetPropertyChangedSignal('AbsolutePosition'):Connect(on_change)
-    Connections['frame_absolute_size_' .. id] = self._frame:GetPropertyChangedSignal('AbsoluteSize'):Connect(on_change)
-    update()
-end
-function AcrylicBlur:check_quality_level()
-    local game_settings = UserSettings().GameSettings
-    local quality_level = game_settings.SavedQualityLevel.Value
-    if quality_level < 8 then
-        self:change_visiblity(false)
-    end
-    Connections['quality_level'] = game_settings:GetPropertyChangedSignal('SavedQualityLevel'):Connect(function()
-        local game_settings = UserSettings().GameSettings
-        local quality_level = game_settings.SavedQualityLevel.Value
-        self:change_visiblity(quality_level >= 8)
-    end)
-end
-function AcrylicBlur:change_visiblity(state: boolean)
-    self._root.Transparency = state and 0.98 or 1
-end
-function AcrylicBlur:destroy()
-    local id = tostring(self)
-    Connections:disconnect('cframe_update_' .. id)
-    Connections:disconnect('viewport_size_update_' .. id)
-    Connections:disconnect('field_of_view_update_' .. id)
-    Connections:disconnect('camera_change_' .. id)
-    Connections:disconnect('frame_absolute_position_' .. id)
-    Connections:disconnect('frame_absolute_size_' .. id)
-    Connections:disconnect('quality_level')
-    if self._frame then
-        self._frame:Destroy()
-        self._frame = nil
-    end
-    if self._folder then
-        self._folder:Destroy()
-        self._folder = nil
-    end
-    local depth_of_fields = Lighting:FindFirstChild('AcrylicBlur')
-    if depth_of_fields then
-        depth_of_fields:Destroy()
-    end
-    self._root = nil
-end
-local function deep_copy_serialize(tbl)
-    local copy = {}
-    for k, v in pairs(tbl) do
-        if type(v) == 'table' then
-            copy[k] = deep_copy_serialize(v)
-        elseif typeof(v) == 'Color3' then
-            copy[k] = {v.R, v.G, v.B}
-        elseif typeof(v) == 'Vector2' then
-            copy[k] = {v.X, v.Y}
-        else
-            copy[k] = v
-        end
-    end
-    return copy
-end
-local Config = setmetatable({
-    VERSION = 4,
-    save = function(self: any, file_name: any, config: any)
-        config = config or {}
-        config._flags = config._flags or {}
-        config._keybinds = config._keybinds or {}
-        config._library = config._library or {}
-        config._version = self.VERSION
-        local success_save, result = pcall(function()
-            local encoded = HttpService:JSONEncode(deep_copy_serialize(config))
-            writefile(ConfigFolder..'/'..file_name..'.json', encoded)
-        end)
-        if not success_save then
-            warn('failed to save config', result)
-        end
-    end,
-    load = function(self: any, file_name: any, config: any)
-        local default_config = config or {
-            _version = self.VERSION,
-            _flags = {},
-            _keybinds = {},
-            _library = {}
-        }
-        local result
-        local success_load, decoded = pcall(function()
-            if not isfile(ConfigFolder..'/'..file_name..'.json') then
-                return nil
-            end
-            return HttpService:JSONDecode(readfile(ConfigFolder..'/'..file_name..'.json'))
-        end)
-        if not success_load then
-            warn('failed to load config (corrupt JSON):', decoded)
-            result = default_config
-        elseif type(decoded) ~= 'table' then
-            result = default_config
-        else
-            result = decoded
-        end
-        result._flags = (type(result._flags) == 'table') and result._flags or {}
-        result._keybinds = (type(result._keybinds) == 'table') and result._keybinds or {}
-        result._library = (type(result._library) == 'table') and result._library or {}
-        local saved_version = result._version
-        if saved_version ~= self.VERSION then
-            result = self:migrate(result, saved_version) or result
-            result._version = self.VERSION
-            self:save(file_name, result)
-        end
-        return result
-    end,
-    migrate = function(self: any, data: any, _from_version: any)
-        return nil
-    end
-}, Config)
-local Library = {
-    _config = Config:load(game.GameId),
-    _choosing_keybind = false,
-    _device = nil,
-    _ui_open = true,
-    _ui_scale = 1,
-    _ui_loaded = false,
-    _ui = nil,
-    _dragging = false,
-    _drag_start = nil,
-    _container_position = nil,
-    _registered_flags = {},
-    _component_registry = {},
-    _internal_flags = {}
+__InstallRuntimeHooks()
+
+getgenv().sets = {
+    title = 'roni hub',
+    tab_width = 110,
+    window_size = {
+        x = 480,
+        y = 360
+    },
+    acrylic = false,
+    theme = 'darker',
+    keybind = 'end'
 }
-Library.__index = Library
-function Library.new()
-    local self = setmetatable({
-        _loaded = false,
-        _tab = 0,
-        _keybind_entries = {},
-    }, Library)
-    self:create_ui()
-    return self
+local __Interface = loadstring(game:HttpGet('https://raw.githubusercontent.com/RiqWhatever/Amfer/refs/heads/main/init.lua'))()
+local __Flags = __Interface.Flags
+local __Players = cloneref(game:GetService('Players'))
+local __UserInputService = cloneref(game:GetService("UserInputService"))
+local __RunService = cloneref(game:GetService('RunService'))
+local __ReplicatedStorage = cloneref(game:GetService("ReplicatedStorage"))
+local __StatsService = cloneref(game:GetService("Stats"))
+local __Debris = cloneref(game:GetService('Debris'))
+local __Workspace = cloneref(game:GetService("Workspace"))
+local __LocalPlayer = __Players.LocalPlayer
+local __Camera = __Workspace.CurrentCamera
+local __Alive = __Workspace:WaitForChild('Alive', 9e9)
+local __Balls = __Workspace:WaitForChild('Balls', 9e9)
+local __AmferConfig = {
+    Combat = {
+        AutoParry = true,
+        AutoAbility = false,
+        Visualize = true,
+        AI = false,
+        AntiCurve = true,
+        AntiInfinity = true,
+        AntiDeathSlash = true,
+        AntiTimeHole = true,
+        AntiSlashOfFury = true,
+        AntiPhantom = true,
+        AntiSingularity = true,
+        AntiCombo = true,
+        CooldownProtection = false,
+    },
+    Particle = {
+        NoParticle = false,
+        Fps = 144
+    },
+    Client = {
+        WalkSpeed = 36,
+        JumpPower = 50,
+        WsToggle = false,
+        JpToggle = false,
+        Status = false
+    }
+}
+local __RevertedRemotes = {}
+local __OriginalMetatables = {}
+local __CapturedParryData = nil
+local __IsMobile = __UserInputService.TouchEnabled
+local __HidenCFrame = CFrame.new(0, -1e6, 0)
+local __CurveStamp = 0
+local __LastBallPos = nil
+local __LastBallVel = nil
+local __LastBallSample = 0
+local __PendingParry = nil
+
+local __PRY = require(__ReplicatedStorage:FindFirstChild('PRY', true))
+local __PRY_Network = getupvalue(__PRY, 6)
+local __PRY_Constants = getupvalue(__PRY, 3)
+local __PRY_Convert = getupvalue(__PRY, 4)
+local __PRY_Hash1 = getupvalue(__PRY, 8)
+local __PRY_Hash2 = __PRY_Constants[2]
+local __PRY_Hash3 = function()
+    local Constant = __PRY_Convert(__PRY_Hash2, 'TIME')
+    local Time = tostring(math.floor(workspace:GetServerTimeNow() * 100))
+    local Encoded = {}
+    for i = 1, #Time do
+        local s1 = string.byte(Constant, ((i - 1) % #Constant) + 1)
+        Encoded[i] = string.char(bit32.bxor((string.byte(Time, i) + i) % 256, s1))
+    end
+    return table.concat(Encoded)
 end
-local NotificationContainer = Instance.new("Frame")
-NotificationContainer.Name = "RobloxCoreGuis"
-NotificationContainer.Size = UDim2.new(0, math.min(300, workspace.CurrentCamera.ViewportSize.X - 20), 0, 0)
-NotificationContainer.AnchorPoint = Vector2.new(1, 0)
-NotificationContainer.Position = UDim2.new(1, -10, 0, 10)
-NotificationContainer.BackgroundTransparency = 1
-NotificationContainer.ClipsDescendants = false;
-local notifParent = nil
-pcall(function()
-    local robloxGui = game:GetService("CoreGui"):FindFirstChild("RobloxGui")
-    if robloxGui then
-        notifParent = robloxGui:FindFirstChild("RobloxCoreGuis")
-        if not notifParent then
-            local sg = Instance.new("ScreenGui")
-            sg.Name = "RobloxCoreGuis"
-            sg.Parent = robloxGui
-            notifParent = sg
+
+local __ParryRemote = nil
+do
+    local RemoteName = string.gsub(game.JobId, '-', '')
+    local GetRemote = __PRY_Network.RemoteEvent
+    task.spawn(function()
+        setthreadidentity(2)
+        setfenv(0, getfenv(__PRY))
+        setfenv(1, getfenv(__PRY))
+        __ParryRemote = GetRemote(__PRY_Network, RemoteName)
+    end)
+end
+local function __IsValidRemoteArgs(args)
+    return #args == 7 and
+        type(args[2]) == "string" and
+        type(args[3]) == "number" and
+        typeof(args[4]) == "CFrame" and
+        type(args[5]) == "table" and
+        type(args[6]) == "table" and
+        type(args[7]) == "boolean"
+end
+local __ServerPositionTable
+local function __GetServerBallPosition(ball)
+    if not ball then return Vector3.zero end
+    local serverPos = __ServerPositionTable and __ServerPositionTable[ball]
+    if serverPos then return serverPos end
+    return ball.Position
+end
+
+task.spawn(function()
+    local __CachedFuncs = {}
+    local function ScanUpvalues(v)
+        if __ServerPositionTable then return true end
+        for _, u in getupvalues(v) do
+            if type(u) ~= 'table' then continue end
+            for i, k in u do
+                if typeof(i) == 'Instance' and typeof(k) == 'Vector3' then
+                    __ServerPositionTable = u
+                    return true
+                end
+            end
         end
+        return false
+    end
+    local function Resolve()
+        if __ServerPositionTable then return end
+        for _, v in __CachedFuncs do if ScanUpvalues(v) then return end end
+        for _, v in getgc(true) do
+            if type(v) ~= 'function' then continue end
+            if not (debug.info(v, 's') or ''):find('BallReplicationHandler') then continue end
+            __CachedFuncs[#__CachedFuncs + 1] = v
+            if ScanUpvalues(v) then return end
+        end
+    end
+    if #__Balls:GetChildren() > 0 then
+        task.wait(0.1); Resolve()
+    end
+    __Balls.ChildAdded:Connect(function()
+        if __ServerPositionTable then return end
+        task.wait(0.1); Resolve()
+    end)
+end)
+local function __HookRemote(remote)
+    if not __RevertedRemotes[remote] then
+        if not __OriginalMetatables[getrawmetatable(remote)] then
+            __OriginalMetatables[getrawmetatable(remote)] = true
+            local __Meta = getrawmetatable(remote)
+            setreadonly(__Meta, false)
+            local __OldIndex = __Meta.__index
+            local __InHook = false
+            __Meta.__index = function(self, key)
+                if __InHook then
+                    return __OldIndex(self, key)
+                end
+                if (key == "FireServer" and self:IsA("RemoteEvent")) or
+                   (key == "InvokeServer" and self:IsA("RemoteFunction")) then
+                    return function(_, ...)
+                        local __Args = {...}
+                        if __IsValidRemoteArgs(__Args) then
+                            if not __RevertedRemotes[self] then
+                                __RevertedRemotes[self] = __Args
+                                __CapturedParryData = {
+                                    remote = self,
+                                    args = __Args
+                                }
+                            end
+                        end
+                        __InHook = true
+                        local fn = __OldIndex(self, key)
+                        __InHook = false
+                        return fn(_, unpack(__Args))
+                    end
+                end
+                return __OldIndex(self, key)
+            end
+            setreadonly(__Meta, true)
+        end
+    end
+end
+for _, __Remote in pairs(__ReplicatedStorage:GetChildren()) do
+    if __Remote:IsA("RemoteEvent") or __Remote:IsA("RemoteFunction") then
+        __HookRemote(__Remote)
+    end
+end
+__ReplicatedStorage.ChildAdded:Connect(function(__Child)
+    if __Child:IsA("RemoteEvent") or __Child:IsA("RemoteFunction") then
+        __HookRemote(__Child)
     end
 end)
-if not notifParent then
-    notifParent = (gethui and gethui()) or CoreGui
-end
-NotificationContainer.Parent = notifParent
-NotificationContainer.AutomaticSize = Enum.AutomaticSize.Y
-local NotificationUIScale = Instance.new("UIScale")
-NotificationUIScale.Parent = NotificationContainer
-Library._notification_uiscale = NotificationUIScale
-Library._notification_container = NotificationContainer
-local UIListLayout = Instance.new("UIListLayout")
-UIListLayout.FillDirection = Enum.FillDirection.Vertical
-UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-UIListLayout.Padding = UDim.new(0, 10)
-UIListLayout.Parent = NotificationContainer
-local NOTIFICATION_ACCENTS = {
-    success = Color3.fromRGB(76, 175, 80),   
-    warn    = Color3.fromRGB(255, 193, 7),   
-    error   = Color3.fromRGB(244, 67, 54),   
-    info    = Color3.fromRGB(255, 255, 255), 
-}
-function Library.SendNotification(settings)
-    local dismissed = false
-    local Notification = Instance.new("TextButton")
-    Notification.Size = UDim2.new(1, 0, 0, 60)
-    Notification.BackgroundTransparency = 1
-    Notification.BorderSizePixel = 0
-    Notification.Text = ""
-    Notification.Name = "Notification"
-    Notification.Parent = NotificationContainer
-    Notification.AutomaticSize = Enum.AutomaticSize.Y
-    local UICorner = Instance.new("UICorner")
-    UICorner.CornerRadius = UDim.new(0, 4)
-    UICorner.Parent = Notification
-    local InnerFrame = Instance.new("Frame")
-    InnerFrame.Size = UDim2.new(1, 0, 0, 60)
-    InnerFrame.Position = UDim2.new(1, 0, 0, 0)
-    InnerFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-    InnerFrame.BackgroundTransparency = 0.1
-    InnerFrame.BorderSizePixel = 0
-    InnerFrame.Name = "InnerFrame"
-    InnerFrame.Parent = Notification
-    InnerFrame.AutomaticSize = Enum.AutomaticSize.Y
-    local InnerUICorner = Instance.new("UICorner")
-    InnerUICorner.CornerRadius = UDim.new(0, 4)
-    InnerUICorner.Parent = InnerFrame
-    local accentColor = NOTIFICATION_ACCENTS[settings.type] or Color3.fromRGB(255, 255, 255)
-    local AccentLine = Instance.new("Frame")
-    AccentLine.Size = UDim2.new(0, 2, 1, -10)
-    AccentLine.Position = UDim2.new(0, 4, 0, 5)
-    AccentLine.BackgroundColor3 = accentColor
-    AccentLine.BorderSizePixel = 0
-    AccentLine.Parent = InnerFrame
-    local AccentCorner = Instance.new("UICorner")
-    AccentCorner.CornerRadius = UDim.new(1, 0)
-    AccentCorner.Parent = AccentLine
-    local Title = Instance.new("TextLabel")
-    Title.Text = settings.title or "Notification Title"
-    Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-    Title.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
-    Title.TextSize = 14
-    Title.Size = UDim2.new(1, -20, 0, 20)
-    Title.Position = UDim2.new(0, 15, 0, 5)
-    Title.BackgroundTransparency = 1
-    Title.TextXAlignment = Enum.TextXAlignment.Left
-    Title.TextYAlignment = Enum.TextYAlignment.Center
-    Title.TextWrapped = true
-    Title.AutomaticSize = Enum.AutomaticSize.Y
-    Title.Parent = InnerFrame
-    local Body = Instance.new("TextLabel")
-    Body.Text = settings.text or "This is the body of the notification."
-    Body.TextColor3 = Color3.fromRGB(200, 200, 200)
-    Body.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Regular, Enum.FontStyle.Normal)
-    Body.TextSize = 12
-    Body.Size = UDim2.new(1, -20, 0, 30)
-    Body.Position = UDim2.new(0, 15, 0, 25)
-    Body.BackgroundTransparency = 1
-    Body.TextXAlignment = Enum.TextXAlignment.Left
-    Body.TextYAlignment = Enum.TextYAlignment.Top
-    Body.TextWrapped = true
-    Body.AutomaticSize = Enum.AutomaticSize.Y
-    Body.Parent = InnerFrame
-    task.spawn(function()
-        task.wait(0.1)
-        if dismissed or not InnerFrame:IsDescendantOf(game) then return end
-        local totalHeight = Title.TextBounds.Y + Body.TextBounds.Y + 15
-        InnerFrame.Size = UDim2.new(1, 0, 0, totalHeight)
-    end)
-    local function dismiss()
-        if dismissed or not Notification.Parent then
-            return
+local __ParriedBalls = setmetatable({}, {__mode = 'k'})
+local __LastFiredTick = 0
+local __LastAckTick = 0
+do
+    local __Remotes = __ReplicatedStorage:WaitForChild('Remotes', 30)
+    if __Remotes then
+        local __DeathBall    = __Remotes:FindFirstChild('DeathBall')
+        local __InfinityBall = __Remotes:FindFirstChild('InfinityBall')
+        local __TimeHoleHold = __Remotes:FindFirstChild('TimeHoleHoldBall')
+        if __DeathBall then
+            __DeathBall.OnClientEvent:Connect(function(_, on)
+                __DeathSlash = on and true or false
+            end)
         end
-        dismissed = true
-        local tweenOut = TweenService:Create(InnerFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.In), {
-            Position = UDim2.new(1, 0, 0, 0),
-            BackgroundTransparency = 1
-        })
-        TweenService:Create(Title, TweenInfo.new(0.5), {TextTransparency = 1}):Play()
-        TweenService:Create(Body, TweenInfo.new(0.5), {TextTransparency = 1}):Play()
-        TweenService:Create(AccentLine, TweenInfo.new(0.5), {BackgroundTransparency = 1}):Play()
-        tweenOut:Play()
-        tweenOut.Completed:Connect(function()
-            if Notification.Parent then
-                Notification:Destroy()
+        if __InfinityBall then
+            __InfinityBall.OnClientEvent:Connect(function(_, on)
+                __Infinity = on and true or false
+            end)
+        end
+        if __TimeHoleHold then
+            __TimeHoleHold.OnClientEvent:Connect(function(_, on)
+                __TimeHole = on and true or false
+            end)
+        end
+    end
+end
+__Balls.ChildAdded:Connect(function(__Ball)
+    __Ball.ChildAdded:Connect(function(__Child)
+        if __Child.Name == 'ComboCounter' then
+            __SlashOfFuryActive = true
+            local __Label = __Child:FindFirstChildOfClass('TextLabel')
+            if __Label then
+                task.spawn(function()
+                    while __Label.Parent do
+                        __SlashOfFuryCount = tonumber(__Label.Text) or 0
+                        task.wait()
+                    end
+                    __SlashOfFuryActive = false
+                    __SlashOfFuryCount = 0
+                end)
             end
+        end
+        local __Cn = __Child.Name
+        if __Cn == 'AeroDynamicSlashVFX' or __Cn:find('[Vv]ortex') or __Cn:find('[Ss]wirl') or __Cn:find('[Cc]urve') or __Cn:find('[Tt]ornado') then
+            __CurveStamp = tick()
+        end
+    end)
+    pcall(function()
+        __Ball:GetAttributeChangedSignal('DribbleActive'):Connect(function()
+            if __Ball:GetAttribute('DribbleActive') then __CurveStamp = tick() end
         end)
-    end
-    Notification.MouseButton1Click:Connect(dismiss)
-    task.spawn(function()
-        local tweenIn = TweenService:Create(InnerFrame, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-            Position = UDim2.new(0, 0, 0, 0)
-        })
-        tweenIn:Play()
-        local duration = settings.duration or 5
-        task.wait(duration)
-        dismiss()
     end)
+    __LastBallPos = nil
+    __LastBallVel = nil
+end)
+__Balls.ChildRemoved:Connect(function()
+    __SlashOfFuryActive = false
+    __SlashOfFuryCount = 0
+end)
+local function __IsCooldownActive()
+    local __Char = __LocalPlayer.Character
+    if not __Char then return false end
+    local __PG = __LocalPlayer:FindFirstChild('PlayerGui')
+    if not __PG then return false end
+    local __HB = __PG:FindFirstChild('Hotbar')
+    if not __HB then return false end
+    local __Block = __HB:FindFirstChild('Block')
+    if not __Block then return false end
+    local __Grad = __Block:FindFirstChild('UIGradient')
+    if not __Grad then return false end
+    return __Grad.Offset.Y < 0.4
 end
-function Library:get_screen_scale()
-    local viewport_size = workspace.CurrentCamera.ViewportSize
-    self._viewport_size = viewport_size
-    local width_scale = (viewport_size.X - 20) / 698
-    local height_scale = (viewport_size.Y - 20) / 479
-    self._ui_scale = math.clamp(math.min(width_scale, height_scale), 0.45, 1)
-end
-function Library:apply_mobile_scale()
-    if self._container_uiscale then
-        self._container_uiscale.Scale = self._ui_scale
-    end
-    if self._mobile_toggle_uiscale then
-        self._mobile_toggle_uiscale.Scale = self._ui_scale
-    end
-    if self._keybinds_uiscale then
-        self._keybinds_uiscale.Scale = self._ui_scale
-    end
-    if self._notification_uiscale then
-        self._notification_uiscale.Scale = self._ui_scale
-    end
-    if self._notification_container and self._viewport_size then
-        self._notification_container.Size = UDim2.new(0, math.min(300, self._viewport_size.X - 20), 0, 0)
-    end
-end
-function Library:get_device()
-    local device = 'Unknown'
-    if not UserInputService.TouchEnabled and UserInputService.KeyboardEnabled and UserInputService.MouseEnabled then
-        device = 'PC'
-    elseif UserInputService.TouchEnabled then
-        device = 'Mobile'
-    elseif UserInputService.GamepadEnabled then
-        device = 'Console'
-    end
-    if device == 'Unknown' then
-        local viewport = workspace.CurrentCamera.ViewportSize
-        if viewport.X > 0 and viewport.X < 700 then
-            device = 'Mobile'
+local function __CooldownProtection()
+    if __IsCooldownActive() then
+        if __AmferConfig.Combat.AutoAbility then
+            local __ABP = __ReplicatedStorage:FindFirstChild('Remotes') and __ReplicatedStorage.Remotes:FindFirstChild('AbilityButtonPress')
+            if __ABP then pcall(function() __ABP:Fire() end) end
         end
-    end
-    self._device = device
-end
-function Library:removed(action: any)
-    self._ui.AncestryChanged:Once(action)
-end
-function Library:register_flag(flag: any, expected_type: any)
-    if not flag or not expected_type then
-        return
-    end
-    self._registered_flags[flag] = expected_type
-    local saved = self._config._flags[flag]
-    if saved ~= nil and typeof(saved) ~= expected_type then
-        self._config._flags[flag] = nil
-        Config:save(game.GameId, self._config)
-    end
-end
-function Library:flag_type(flag: any, flag_type: any)
-    if not Library._config or not Library._config._flags or Library._config._flags[flag] == nil then
-        return
-    end
-    return typeof(Library._config._flags[flag]) == flag_type
-end
-function Library:remove_table_value(__table: any, table_value: string)
-    for index, value in __table do
-        if value ~= table_value then
-            continue
-        end
-        table.remove(__table, index)
-    end
-end
-function Library:get_keybind_name(flag: any)
-    if not flag or not self._config or not self._config._keybinds then
-        return nil
-    end
-    local keybind = self._config._keybinds[flag]
-    if not keybind then
-        return nil
-    end
-    local key_name = tostring(keybind):gsub("Enum.KeyCode.", "")
-    if key_name == "" or key_name == "Unknown" or key_name == "None" then
-        return nil
-    end
-    return key_name
-end
-function Library:set_keybind(flag: any, key_code: any)
-    if not flag then
-        return nil
-    end
-    self._config._keybinds = self._config._keybinds or {}
-    if not key_code or key_code == Enum.KeyCode.Unknown then
-        self._config._keybinds[flag] = nil
-        return nil
-    end
-    local key_name = tostring(key_code):gsub("Enum.KeyCode.", "")
-    if key_name == "" or key_name == "Unknown" or key_name == "None" then
-        self._config._keybinds[flag] = nil
-        return nil
-    end
-    self._config._keybinds[flag] = "Enum.KeyCode." .. key_name
-    return key_name
-end
-function Library:set_toggle_keybind(key_code: any)
-    self._toggle_keybind = key_code
-end
-function Library:load()
-end
-local SHARE_PREFIX = "RONI1"
-function Library:_is_internal_flag(flag: any)
-    return self._internal_flags[flag] == true
-end
-function Library:register_component(flag: any, apply_fn: any)
-    if not flag or type(apply_fn) ~= 'function' then
-        return
-    end
-    self._component_registry[flag] = apply_fn
-end
-function Library:_exportable_flags()
-    local out = {}
-    for flag, value in pairs(self._config._flags or {}) do
-        if not self:_is_internal_flag(flag) then
-            out[flag] = value
-        end
-    end
-    return out
-end
-function Library:encode_share()
-    local payload = HttpService:JSONEncode({
-        v = 1,
-        f = self:_exportable_flags()
-    })
-    return SHARE_PREFIX .. ":" .. Base64.encode(payload)
-end
-function Library:decode_share(code: string)
-    if type(code) ~= "string" then return nil end
-    code = code:match("^%s*(.-)%s*$")
-    local prefix, body = code:match("^(" .. SHARE_PREFIX .. ")%s*:%s*(.+)$")
-    if not prefix or not body then
-        return nil
-    end
-    local success, json = pcall(function()
-        return Base64.decode(body)
-    end)
-    if not success or type(json) ~= "string" then
-        return nil
-    end
-    local ok, decoded = pcall(function()
-        return HttpService:JSONDecode(json)
-    end)
-    if not ok or type(decoded) ~= "table" then
-        return nil
-    end
-    if type(decoded.f) ~= "table" then
-        return nil
-    end
-    return decoded
-end
-function Library:apply_config(flags: any)
-    if type(flags) ~= "table" then return end
-    for flag, value in pairs(flags) do
-        if not self:_is_internal_flag(flag) then
-            self._config._flags[flag] = value
-            local apply_fn = self._component_registry[flag]
-            if apply_fn then
-                local ok = pcall(apply_fn, value)
-                if not ok then
-                    warn('[roni] failed to apply flag live:', tostring(flag))
-                end
-            end
-        end
-    end
-    Config:save(game.GameId, self._config)
-end
-function Library:_named_configs_path()
-    return ConfigFolder .. "/configs_" .. tostring(game.GameId) .. ".json"
-end
-function Library:_read_named_configs()
-    local path = self:_named_configs_path()
-    if not isfile(path) then
-        return {}
-    end
-    local ok, raw = pcall(readfile, path)
-    if not ok or type(raw) ~= "string" or raw == "" then
-        return {}
-    end
-    local decoded_ok, decoded = pcall(function()
-        return HttpService:JSONDecode(raw)
-    end)
-    if not decoded_ok or type(decoded) ~= "table" then
-        return {}
-    end
-    return decoded
-end
-function Library:_write_named_configs(map: any)
-    local path = self:_named_configs_path()
-    local ok = pcall(function()
-        writefile(path, HttpService:JSONEncode(map))
-    end)
-    if not ok then
-        warn('[roni] failed to write named configs')
-    end
-end
-function Library:get_named_config_names()
-    local map = self:_read_named_configs()
-    local names = {}
-    for name in pairs(map) do
-        table.insert(names, name)
-    end
-    table.sort(names, function(a, b) return a:lower() < b:lower() end)
-    return names
-end
-function Library:save_named_config(name: string)
-    if type(name) ~= "string" then return false end
-    name = name:match("^%s*(.-)%s*$")
-    if name == "" then return false end
-    local map = self:_read_named_configs()
-    map[name] = { _flags = self:_exportable_flags() }
-    self:_write_named_configs(map)
-    return true
-end
-function Library:load_named_config(name: string)
-    if type(name) ~= "string" then return false end
-    local map = self:_read_named_configs()
-    local entry = map[name]
-    if type(entry) ~= "table" then return false end
-    self:apply_config(entry._flags)
-    return true
-end
-function Library:delete_named_config(name: string)
-    if type(name) ~= "string" then return false end
-    local map = self:_read_named_configs()
-    if map[name] == nil then return false end
-    map[name] = nil
-    self:_write_named_configs(map)
-    return true
-end
-function Library:set_clipboard(text: string)
-    local fn = setclipboard or toclipboard or (syn and syn.write_clipboard)
-    if fn then
-        pcall(fn, text)
         return true
     end
     return false
 end
-function Library:clear_keybind(flag: any)
-    if self._config and self._config._keybinds then
-        self._config._keybinds[flag] = nil
-    end
+local function __HasSingularity()
+    local __Char = __LocalPlayer.Character
+    if not __Char or not __Char.PrimaryPart then return false end
+    if __Char.PrimaryPart:FindFirstChild('SingularityCape') then return true end
+    if __Char.PrimaryPart:FindFirstChild('Cape') then return true end
+    return false
 end
-function Library:keybind_matches(flag: any, input: InputObject)
-    local key_name = self:get_keybind_name(flag)
-    return key_name ~= nil and input.KeyCode.Name == key_name
+local __PingCacheVal = 0
+local __PingCacheT = 0
+local function __GetPing()
+    local __T = tick()
+    if (__T - __PingCacheT) > 0.1 then
+        __PingCacheVal = __StatsService.Network.ServerStatsItem["Data Ping"]:GetValue()
+        __PingCacheT = __T
+    end
+    return __PingCacheVal
 end
-function Library:update_keybind_entry(flag: any)
-    if not self._keybind_entries or not self._keybind_entries[flag] then
-        return
-    end
-    local entry = self._keybind_entries[flag]
-    local key_name = self:get_keybind_name(flag) or "..."
-    if entry.frame then
-        entry.frame.Visible = (key_name ~= "..." and key_name ~= "None" and key_name ~= "")
-    end
-    if entry.bind then
-        entry.bind.Text = "[ " .. key_name .. " ]"
-    end
-    if entry.state then
-        if entry.action then
-            entry.state.Text = "[ Action ]"
-            entry.state.TextColor3 = Color3.fromRGB(200, 200, 200)
-        else
-            local enabled = entry.get_state and entry.get_state() or false
-            entry.state.Text = enabled and "[ Enabled ]" or "[ Disabled ]"
-            entry.state.TextColor3 = enabled and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(100, 100, 100)
-        end
-    end
+local function __RootPart()
+    return (__LocalPlayer.Character and __LocalPlayer.Character:FindFirstChild('HumanoidRootPart'))
 end
-function Library:begin_keybind_widget_capture(flag: any)
-    if self._choosing_keybind or not UserInputService.KeyboardEnabled or not self._keybind_entries or not self._keybind_entries[flag] then
-        return
-    end
-    self._choosing_keybind = true
-    local entry = self._keybind_entries[flag]
-    if entry.bind then
-        entry.bind.Text = "[ ... ]"
-    end
-    Connections:disconnect("keybind_widget_capture_" .. flag)
-    Connections["keybind_widget_capture_" .. flag] = UserInputService.InputBegan:Connect(function(input, processed)
-        if processed then
-            return
-        end
-        local key_name = nil
-        if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Enum.KeyCode.Escape then
-            self._choosing_keybind = false
-            self:update_keybind_entry(flag)
-            Connections:disconnect("keybind_widget_capture_" .. flag)
-            return
-        elseif input.UserInputType == Enum.UserInputType.Keyboard then
-            if input.KeyCode == Enum.KeyCode.Unknown then
-                return
-            end
-            if input.KeyCode ~= Enum.KeyCode.Backspace then
-                key_name = self:set_keybind(flag, input.KeyCode)
-            else
-                self:clear_keybind(flag)
-            end
-        elseif input.UserInputType == Enum.UserInputType.MouseButton2 or input.UserInputType == Enum.UserInputType.MouseButton3 then
-            self:clear_keybind(flag)
-        else
-            return
-        end
-        Config:save(game.GameId, self._config)
-        if entry.on_changed then
-            entry.on_changed(key_name)
-        end
-        self._choosing_keybind = false
-        self:update_keybind_entry(flag)
-        Connections:disconnect("keybind_widget_capture_" .. flag)
-    end)
-end
-function Library:register_keybind_entry(flag: any, title: string, get_state: any, on_changed: any, action: boolean)
-    if not flag or not self._keybinds_widget then
-        return
-    end
-    self._keybind_entries = self._keybind_entries or {}
-    if self._keybind_entries[flag] then
-        self._keybind_entries[flag].title = title
-        self._keybind_entries[flag].get_state = get_state
-        self._keybind_entries[flag].on_changed = on_changed
-        self._keybind_entries[flag].action = action
-        self:update_keybind_entry(flag)
-        return
-    end
-    local entry = Instance.new("Frame")
-    entry.Name = "KB_" .. tostring(flag)
-    entry.Size = UDim2.new(1, 0, 0, 20)
-    entry.BackgroundTransparency = 1
-    entry.Parent = self._keybinds_widget
-    local nameLabel = Instance.new("TextLabel")
-    nameLabel.Size = UDim2.new(1, -125, 1, 0)
-    nameLabel.Position = UDim2.new(0, 0, 0, 0)
-    nameLabel.BackgroundTransparency = 1
-    nameLabel.Text = title or tostring(flag)
-    nameLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-    nameLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-    nameLabel.TextSize = 12
-    nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-    nameLabel.Parent = entry
-    local stateLabel = Instance.new("TextLabel")
-    stateLabel.Name = "State"
-    stateLabel.Size = UDim2.new(0, 70, 1, 0)
-    stateLabel.Position = UDim2.new(1, -70, 0, 0)
-    stateLabel.BackgroundTransparency = 1
-    stateLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-    stateLabel.TextSize = 12
-    stateLabel.TextXAlignment = Enum.TextXAlignment.Right
-    stateLabel.Parent = entry
-    local bindLabel = Instance.new("TextButton")
-    bindLabel.Name = "Bind"
-    bindLabel.Size = UDim2.new(0, 50, 1, 0)
-    bindLabel.Position = UDim2.new(1, -125, 0, 0)
-    bindLabel.BackgroundTransparency = 1
-    bindLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-    bindLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
-    bindLabel.TextSize = 12
-    bindLabel.TextXAlignment = Enum.TextXAlignment.Right
-    bindLabel.Parent = entry
-    self._keybind_entries[flag] = {
-        frame = entry,
-        bind = bindLabel,
-        state = stateLabel,
-        title = title,
-        get_state = get_state,
-        on_changed = on_changed,
-        action = action
-    }
-    bindLabel.MouseButton1Click:Connect(function()
-        self:begin_keybind_widget_capture(flag)
-    end)
-    self:update_keybind_entry(flag)
-end
-function Library:create_ui()
-    local old_Allusive = CoreGui:FindFirstChild('roni')
-    if old_Allusive then
-        Debris:AddItem(old_Allusive, 0)
-    end
-    local protect_gui = protect_gui or protectgui or (syn and syn.protect_gui) or function() end
-    local Allusive = Instance.new('ScreenGui')
-    Allusive.ResetOnSpawn = false
-    Allusive.Name = Util:random_string()
-    
-    local signature = Instance.new('StringValue')
-    signature.Name = 'RoniSignature'
-    signature.Parent = Allusive
+local __IsCurvedData = { Lerp_Radians = 0, Curving = tick(), Last_Warping = tick() }
+local function __IsCurved()
+    local __Ball = __RealBall
+    if not __Ball then return false end
+    local __Zoomies = __Ball:FindFirstChild('zoomies')
+    if not __Zoomies then return false end
 
-    Allusive.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
-    if RunService:IsStudio() then
-        Allusive.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+    local Velocity = __Zoomies.VectorVelocity
+    local Speed = Velocity.Magnitude
+    if Speed < 1 then return false end
+
+    local Ball_Position = __GetServerBallPosition(__Ball)
+    local Root = __RootPart()
+    if not Root then return false end
+    local Player_Position = Root.Position
+
+    local DX = Player_Position.X - Ball_Position.X
+    local DY = Player_Position.Y - Ball_Position.Y
+    local DZ = Player_Position.Z - Ball_Position.Z
+    local Distance_Squared = DX*DX + DY*DY + DZ*DZ
+    if Distance_Squared < 1 then return false end
+
+    local Distance = math.sqrt(Distance_Squared)
+    local Inv_Distance = 1 / Distance
+    local Dir_X, Dir_Y, Dir_Z = DX*Inv_Distance, DY*Inv_Distance, DZ*Inv_Distance
+
+    local Inv_Speed = 1 / Speed
+    local BX, BY, BZ = Velocity.X*Inv_Speed, Velocity.Y*Inv_Speed, Velocity.Z*Inv_Speed
+
+    local Dot = Dir_X*BX + Dir_Y*BY + Dir_Z*BZ
+    local Clamped_Dot = math.clamp(Dot, -1, 1)
+
+    local Speed_Threshold = math.min(Speed * 0.01, 40)
+    local Pings = __GetPing()
+    local Ping_Factor = Pings * 0.001
+    local Dot_Threshold = 0.35 - Ping_Factor
+    local Angle_Threshold = 8 * math.max(Dot, 0)
+    local Reach_Time = Distance * Inv_Speed - Ping_Factor
+    local Ball_Distance_Threshold = 18 - math.min(Distance*0.001, 15) + Angle_Threshold + Speed_Threshold
+
+    local Radians = math.asin(Clamped_Dot)
+    __IsCurvedData.Lerp_Radians = __IsCurvedData.Lerp_Radians + (Radians - __IsCurvedData.Lerp_Radians) * 0.65
+
+    local Now = tick()
+    local Warp_Age = Now - __IsCurvedData.Last_Warping
+    local Curve_Age = Now - __IsCurvedData.Curving
+    local Half_Reach = Reach_Time * 0.5
+
+    if Distance < Ball_Distance_Threshold then return false end
+    if Clamped_Dot < Dot_Threshold then return true end
+    if __IsCurvedData.Lerp_Radians < 0.02 then __IsCurvedData.Last_Warping = Now end
+    if Warp_Age < Half_Reach then return true end
+    if Curve_Age < Half_Reach then return true end
+    if Speed > 150 then
+        return Dot < (Dot_Threshold - (Speed - 150) * 0.0008)
+    end
+    return Dot < Dot_Threshold
+end
+local function __ShouldBlockParry()
+    if __AmferConfig.Combat.AntiInfinity   and __Infinity         then return true end
+    if __AmferConfig.Combat.AntiDeathSlash and __DeathSlash       then return true end
+    if __AmferConfig.Combat.AntiTimeHole   and __TimeHole         then return true end
+    if __AmferConfig.Combat.AntiPhantom    and __Phantom          then return true end
+    if __AmferConfig.Combat.AntiSingularity and __HasSingularity() then return true end
+    if __AmferConfig.Combat.AntiCombo and __RealBall and __RealBall:FindFirstChild('ComboCounter') then return true end
+    local __CloseRange = false
+    if __RealBall then
+        local __CR = __RootPart()
+        if __CR then
+            __CloseRange = (__CR.Position - __GetServerBallPosition(__RealBall)).Magnitude <= 8
+        end
+    end
+    if not __CloseRange then
+        if __AmferConfig.Combat.AntiCurve and __IsCurved()        then return true end
+    end
+    if __AmferConfig.Combat.CooldownProtection and __CooldownProtection() then return true end
+    return false
+end
+local __TabCombat = __Interface:create_tab('Combat', 'swords')
+local __TabVisuals = __Interface:create_tab('Visuals', 'eye')
+local __TabMisc = __Interface:create_tab('Misc', 'settings')
+local __RealBall
+local __FakeBall
+local __MyPosition
+local __LastPlayerTarget
+local __BallSpeedView = 0
+local __ParryTimeNow = tick()
+local __ParryLastTime = __ParryTimeNow
+local __ParryTimeViewer = 5
+local __CalaTimeClash = 0.3
+local __IsLookAt = true
+local __IsClash = false
+local __Phantom = false
+local __UserFPS = 60
+local __TornadoTime = tick()
+local __Infinity = false
+local __DeathSlash = false
+local __TimeHole = false
+local __PreviousVelocity = {}
+local __Curving = tick()
+local __LastWarping = tick()
+local __PredictBall
+local __GetBallFuture
+local __LerpRadians = 0
+local __SlashOfFuryActive = false
+local __SlashOfFuryCount = 0
+local __SitAnimationCollect = {}
+local __LoopStack = {
+    Loop1 = false, Loop2 = false, Loop3 = false, Loop4 = false, Loop5 = false,
+    Loop6 = false, Loop7 = false, Loop8 = false, Loop9 = false, Loop10 = false,
+}
+local __ArchPart = Instance.new('Part')
+__ArchPart.Color = Color3.fromRGB(26, 255, 0)
+__ArchPart.Material = Enum.Material.ForceField
+__ArchPart.CanCollide = false 
+__ArchPart.Shape = Enum.PartType.Ball
+__ArchPart.Anchored = true
+__ArchPart.Parent = __Workspace
+__ArchPart.CastShadow = false
+__ArchPart.Size = Vector3.new(0,0,0)
+local __StatusGui = Instance.new("ScreenGui")
+local __StatusLabel = Instance.new("TextLabel")
+__StatusGui.Name = "AmferStatus"
+__StatusGui.Parent = game:FindFirstChild('CoreGui')
+__StatusGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+__StatusLabel.Parent = __StatusGui
+__StatusLabel.AnchorPoint = Vector2.new(0, 1)
+__StatusLabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+__StatusLabel.BackgroundTransparency = 1.000
+__StatusLabel.Position = UDim2.new(0.01, 0, 0.99, 0)
+__StatusLabel.Size = UDim2.new(0.99, 0, 0.02, 0)
+__StatusLabel.Font = Enum.Font.GothamBold
+__StatusLabel.Text = "Target: None"
+__StatusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+__StatusLabel.TextScaled = true
+__StatusLabel.TextTransparency = 0.4
+__StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+local function __GetDistance(target)
+    local __Root = __RootPart()
+    if not __Root then return 0 end
+    local __Velocity = __Root.Velocity
+    local __MaxUnp = 150
+    if not target then
+        return (__Root.Position - (__Velocity / __MaxUnp))
+    end
+    return ((__Root.Position - (__Velocity / __MaxUnp)) - target).Magnitude
+end
+local __ParryCooldownGradient = nil
+local function __ResolveCooldownGradient()
+    if __ParryCooldownGradient and __ParryCooldownGradient.Parent then
+        return __ParryCooldownGradient
+    end
+    local __PG = __LocalPlayer:FindFirstChild('PlayerGui')
+    if not __PG then return nil end
+    local __HB = __PG:FindFirstChild('Hotbar'); if not __HB then return nil end
+    local __Block = __HB:FindFirstChild('Block'); if not __Block then return nil end
+    local __Grad = __Block:FindFirstChild('UIGradient'); if not __Grad then return nil end
+    __ParryCooldownGradient = __Grad
+    return __Grad
+end
+local function __ParryReady(__Dist)
+    local __Grad = __ResolveCooldownGradient()
+    if __Grad and __Grad.Offset.Y < 0.49 then return false end
+    if __Dist and __Dist <= 25 then
+        return true
+    end
+    if __PendingParry then
+        local __Age = tick() - __PendingParry
+        local __PingMs = __GetPing()
+        local __Timeout = (__Dist and __Dist < 35) and 0.015 or (0.03 + (__PingMs / 1000) * 0.8)
+        if __Age > __Timeout then
+            __PendingParry = nil
+            return true
+        end
+        return false
+    end
+    return true
+end
+local __SpeedDivisorMult = 1.1
+local function __ShouldParryNow(__Ball)
+    __Ball = __Ball or __RealBall
+    if not __Ball then return false end
+    if __Ball:GetAttribute('target') ~= tostring(__LocalPlayer) then return false end
+    local __Zoomies = __Ball:FindFirstChild('zoomies')
+    if not __Zoomies then return false end
+    local __Root = __RootPart()
+    if not __Root then return false end
+    local __Vel   = __Zoomies.VectorVelocity
+    local __Speed = __Vel.Magnitude
+    if __Speed < 0.5 then return false end
+    local __ToPlayer = __Root.Position - __GetServerBallPosition(__Ball)
+    local __Dist     = __ToPlayer.Magnitude
+    if not __ParryReady(__Dist) then return false end
+    if __Dist <= 22 then return true end
+    local __PingRaw         = __GetPing()
+    local __Ping            = __PingRaw / 10
+    local __PingThreshold   = math.clamp(__Ping / 10, 5, 17)
+    local __CappedSpeedDiff = math.min(math.max(__Speed - 9.5, 0), 650)
+    local __SpeedDivBase    = 2.4 + __CappedSpeedDiff * 0.002
+    local __SpeedDiv        = __SpeedDivBase * __SpeedDivisorMult
+    local __NvFormula       = __PingThreshold + math.max(__Speed / __SpeedDiv, 9.5)
+    local __FakeoutRange = __Ball:GetAttribute('FakeoutRange')
+    local __HighPing = __PingRaw > 150
+    local __SafetyMargin = math.clamp((__PingRaw - 150) / 100, 0, 4)
+    local __ParryAccuracy = (__FakeoutRange and math.max(__FakeoutRange, __NvFormula) or __NvFormula) + __SafetyMargin
+    if __Dist > __ParryAccuracy then return false end
+    if __Dist > (__FakeoutRange or 12) then
+        local __D = __GetServerBallPosition(__Ball) - __Root.Position
+        local __VRel = __Vel - __Root.Velocity
+        local __R = __ParryAccuracy
+        local __a = __VRel:Dot(__VRel)
+        if __a < 0.001 then return false end
+        local __b = 2 * __D:Dot(__VRel)
+        local __c = __D:Dot(__D) - __R * __R
+        local __Disc = __b * __b - 4 * __a * __c
+        if __Disc < 0 then return false end
+        local __SqrtD = math.sqrt(__Disc)
+        local __TEntry = (-__b - __SqrtD) / (2 * __a)
+        local __TExit  = (-__b + __SqrtD) / (2 * __a)
+        if __TExit < 0 then return false end
+        local __TImpact = math.max(__TEntry, 0)
+        local __FireWindow = math.clamp(__PingRaw / 1000 + 0.10, 0.12, 0.55)
+        if __TImpact > __FireWindow then return false end
+        if not __HighPing and (__TExit - __TImpact) < 0.02 then return false end
+    end
+    return true
+end
+local function __ClosestPlayer()
+    if __LocalPlayer.Character.Parent ~= __Alive then return nil end
+    local __MaxDist = math.huge
+    local __Closest = nil
+    for _, __Entity in pairs(__Alive:GetChildren()) do
+        if tostring(__Entity) ~= tostring(__LocalPlayer) and __Entity.PrimaryPart then
+            local __Dist = __LocalPlayer:DistanceFromCharacter(__Entity.PrimaryPart.Position)
+            if __Dist < __MaxDist then
+                __MaxDist = __Dist
+                __Closest = __Entity
+            end
+        end
+    end
+    return __Closest
+end
+local function __ClosestAim()
+    if __LocalPlayer.Character.Parent ~= __Alive then return nil end
+    local __MaxDist = math.huge
+    local __Closest = nil
+    local __Center = Vector2.new(__Camera.ViewportSize.X / 2, __Camera.ViewportSize.Y / 2)
+    for _, __Entity in pairs(__Alive:GetChildren()) do
+        if tostring(__Entity) ~= tostring(__LocalPlayer) and __Entity.PrimaryPart then
+            local __ScreenPos, __OnScreen = __Camera:WorldToViewportPoint(__Entity.PrimaryPart.Position)
+            if __OnScreen then
+                local __Dist = (Vector2.new(__ScreenPos.X, __ScreenPos.Y) - __Center).Magnitude
+                if __Dist < __MaxDist then
+                    __MaxDist = __Dist
+                    __Closest = __Entity
+                end
+            end
+        end
+    end
+    return __Closest
+end
+local function __GetEntitiesScreenPoints()
+    local __EventData = {}
+    if __Alive then
+        for _, __Entity in pairs(__Alive:GetChildren()) do
+            if __Entity.PrimaryPart then
+                local __Success, __ScreenPoint = pcall(function()
+                    return __Camera:WorldToScreenPoint(__Entity.PrimaryPart.Position)
+                end)
+                if __Success then
+                    __EventData[__Entity.Name] = __ScreenPoint
+                end
+            end
+        end
+    end
+    return __EventData
+end
+local function __GetParryCFrame()
+    local __Type = __Flags['curve_mode']
+    local __Events = __GetEntitiesScreenPoints()
+    local __MouseLocation = {0, 0}
+    if __IsMobile then
+        __MouseLocation = {__Camera.ViewportSize.X / 2, __Camera.ViewportSize.Y / 2}
     else
-        protect_gui(Allusive)
-        Allusive.Parent = (gethui and gethui()) or CoreGui
-        local hooking = hookfunc or hookfunction
-        if hooking then
-            pcall(function()
-                hooking(ContentProvider.PreloadAsync, function(...) return 1 end)
-                hooking(ContentProvider.Preload, function(...) return 2 end)
-                hooking(ContentProvider.GetAssetFetchStatus, function(...) return 3 end)
-            end)
-        end
+        local __Mouse = __UserInputService:GetMouseLocation()
+        __MouseLocation = {__Mouse.X, __Mouse.Y}
     end
-    local Container = Instance.new('Frame')
-    Container.ClipsDescendants = true
-    Container.BorderColor3 = Color3.fromRGB(0, 0, 0)
-    Container.AnchorPoint = Vector2.new(0.5, 0.5)
-    Container.Name = 'Container'
-    Container.BackgroundTransparency = 0.05000000074505806
-    Container.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
-    Container.Position = UDim2.new(0.5, 0, 0.5, 0)
-    Container.Size = UDim2.new(0, 0, 0, 0)
-    Container.Active = true
-    Container.BorderSizePixel = 0
-    Container.Parent = Allusive
-    local UICorner = Instance.new('UICorner')
-    UICorner.CornerRadius = UDim.new(0, 10)
-    UICorner.Parent = Container
-    local UIStroke = Instance.new('UIStroke')
-    UIStroke.Color = Color3.fromRGB(90, 90, 90)
-    UIStroke.Transparency = 0.7
-    UIStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-    UIStroke.Parent = Container
-    local Handler = Instance.new('Frame')
-    Handler.BackgroundTransparency = 1
-    Handler.Name = 'Handler'
-    Handler.BorderColor3 = Color3.fromRGB(0, 0, 0)
-    Handler.Size = UDim2.new(0, 698, 0, 479)
-    Handler.BorderSizePixel = 0
-    Handler.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    Handler.Parent = Container
-    local Tabs = Instance.new('ScrollingFrame')
-    Tabs.ScrollBarImageTransparency = 1
-    Tabs.ScrollBarThickness = 0
-    Tabs.Name = 'Tabs'
-    Tabs.Size = UDim2.new(0, 129, 0, 401)
-    Tabs.Selectable = false
-    Tabs.AutomaticCanvasSize = Enum.AutomaticSize.XY
-    Tabs.BackgroundTransparency = 1
-    Tabs.Position = UDim2.new(0.026097271591424942, 0, 0.1111111119389534, 0)
-    Tabs.BorderColor3 = Color3.fromRGB(0, 0, 0)
-    Tabs.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    Tabs.BorderSizePixel = 0
-    Tabs.CanvasSize = UDim2.new(0, 0, 0.5, 0)
-    Tabs.Parent = Handler
-    local UIListLayout = Instance.new('UIListLayout')
-    UIListLayout.Padding = UDim.new(0, 4)
-    UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-    UIListLayout.Parent = Tabs
-    local ClientName = Instance.new('TextLabel')
-    ClientName.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Bold, Enum.FontStyle.Normal)
-    ClientName.TextColor3 = Color3.fromRGB(255, 255, 255)
-    ClientName.TextTransparency = 0.20000000298023224
-    ClientName.Text = 'RONI'
-    ClientName.Name = 'ClientName'
-    ClientName.Size = UDim2.new(0, 31, 0, 13)
-    ClientName.AnchorPoint = Vector2.new(0, 0.5)
-    ClientName.Position = UDim2.new(0.0560000017285347, 0, 0.054999999701976776, 0)
-    ClientName.BackgroundTransparency = 1
-    ClientName.TextXAlignment = Enum.TextXAlignment.Left
-    ClientName.BorderSizePixel = 0
-    ClientName.BorderColor3 = Color3.fromRGB(0, 0, 0)
-    ClientName.TextSize = 13
-    ClientName.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    ClientName.Parent = Handler
-    local UIGradient = Instance.new('UIGradient')
-    UIGradient.Color = ColorSequence.new{
-        ColorSequenceKeypoint.new(0, Color3.fromRGB(155, 155, 155)),
-        ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255))
-    }
-    UIGradient.Parent = ClientName
-    local Pin = Instance.new('Frame')
-    Pin.Name = 'Pin'
-    Pin.Position = UDim2.new(0.026000000536441803, 0, 0.13600000739097595, 0)
-    Pin.BorderColor3 = Color3.fromRGB(0, 0, 0)
-    Pin.Size = UDim2.new(0, 2, 0, 16)
-    Pin.BorderSizePixel = 0
-    Pin.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    Pin.Parent = Handler
-    local UICorner = Instance.new('UICorner')
-    UICorner.CornerRadius = UDim.new(1, 0)
-    UICorner.Parent = Pin
-    local Icon = Instance.new('ImageLabel')
-    Icon.ImageColor3 = Color3.fromRGB(255, 255, 255)
-    Icon.ScaleType = Enum.ScaleType.Fit
-    Icon.BorderColor3 = Color3.fromRGB(0, 0, 0)
-    Icon.AnchorPoint = Vector2.new(0, 0.5)
-    Icon.Image = 'rbxassetid://107819132007001'
-    Icon.BackgroundTransparency = 1
-    Icon.Position = UDim2.new(0.02500000037252903, 0, 0.054999999701976776, 0)
-    Icon.Name = 'Icon'
-    Icon.Size = UDim2.new(0, 18, 0, 18)
-    Icon.BorderSizePixel = 0
-    Icon.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    Icon.Parent = Handler
-    local Divider = Instance.new('Frame')
-    Divider.Name = 'Divider'
-    Divider.BackgroundTransparency = 0.5
-    Divider.Position = UDim2.new(0.23499999940395355, 0, 0, 0)
-    Divider.BorderColor3 = Color3.fromRGB(0, 0, 0)
-    Divider.Size = UDim2.new(0, 1, 0, 479)
-    Divider.BorderSizePixel = 0
-    Divider.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-    Divider.Parent = Handler
-    local Sections = Instance.new('Folder')
-    Sections.Name = 'Sections'
-    Sections.Parent = Handler
-    local Minimize = Instance.new('TextButton')
-    Minimize.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Regular, Enum.FontStyle.Normal)
-    Minimize.TextColor3 = Color3.fromRGB(0, 0, 0)
-    Minimize.BorderColor3 = Color3.fromRGB(0, 0, 0)
-    Minimize.Text = ''
-    Minimize.AutoButtonColor = true
-    Minimize.Name = 'Minimize'
-    Minimize.BackgroundTransparency = 1
-    Minimize.Position = UDim2.new(0.020057305693626404, 0, 0.02922755666077137, 0)
-    Minimize.Size = UDim2.new(0, 24, 0, 24)
-    Minimize.BorderSizePixel = 0
-    Minimize.TextSize = 14
-    Minimize.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-    Minimize.Parent = Handler
-    local UIScale = Instance.new('UIScale')
-    UIScale.Parent = Container
-    self._container_uiscale = UIScale
-    self._ui = Allusive
-    local active_drag_input = nil
-    local function on_drag(input: InputObject, process: boolean)
-        if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and not self._dragging then 
-            self._dragging = true
-            self._drag_start = input.Position
-            self._container_position = Container.Position
-            active_drag_input = input
-            if Connections['container_input_ended'] then Connections['container_input_ended']:Disconnect() end
-            Connections['container_input_ended'] = input.Changed:Connect(function()
-                if input.UserInputState ~= Enum.UserInputState.End then
-                    return
-                end
-                if Connections['container_input_ended'] then
-                    Connections['container_input_ended']:Disconnect()
-                    Connections['container_input_ended'] = nil
-                end
-                self._dragging = false
-                active_drag_input = nil
-            end)
+    if __Type == 'custom' then
+        return {0, CFrame.new(__Camera.CFrame.Position, __Camera.CFrame.Position + __Camera.CFrame.LookVector), __Events, __MouseLocation}
+    elseif __Type == 'straight' then
+        local __Aim = __ClosestAim() or __ClosestPlayer()
+        if __Aim then
+            return {0, CFrame.new(__LocalPlayer.Character.PrimaryPart.Position, __Aim.PrimaryPart.Position), __Events, __MouseLocation}
         end
+        return {0, __Camera.CFrame, __Events, __MouseLocation}
+    elseif __Type == 'backwards' then
+        local __Back = -__Camera.CFrame.LookVector
+        __Back = Vector3.new(__Back.X, 0, __Back.Z)
+        return {0, CFrame.new(__Camera.CFrame.Position, __Camera.CFrame.Position + __Back), __Events, __MouseLocation}
+    elseif __Type == 'random' then
+        local __FwdR = __Camera.CFrame.LookVector
+        local __RightR = __Camera.CFrame.RightVector
+        local __UpR = __Camera.CFrame.UpVector
+        local __SpreadR = math.tan(math.rad(15))
+        local __DxR = (math.random() * 2 - 1) * __SpreadR
+        local __DyR = (math.random() * 2 - 1) * __SpreadR
+        local __AimR = (__FwdR + __RightR * __DxR + __UpR * __DyR).Unit
+        return {0, CFrame.new(__Camera.CFrame.Position, __Camera.CFrame.Position + __AimR * 100), __Events, __MouseLocation}
     end
-    local function update_drag(input: any)
-        local delta = input.Position - self._drag_start
-        local position = UDim2.new(self._container_position.X.Scale, self._container_position.X.Offset + delta.X, self._container_position.Y.Scale, self._container_position.Y.Offset + delta.Y)
-        Container.Position = position
+    return {0, __Camera.CFrame, __Events, __MouseLocation}
+end
+local function __SimulateInput()
+    local VIM = Instance.new('VirtualInputManager')
+    if __IsMobile then
+        local Mouse_Pos = __UserInputService:GetMouseLocation()
+        VIM:SendMouseButtonEvent(Mouse_Pos.X, Mouse_Pos.Y, 0, true, game, 0)
+        VIM:SendMouseButtonEvent(Mouse_Pos.X, Mouse_Pos.Y, 0, false, game, 0)
+    else
+        VIM:SendKeyEvent(true, Enum.KeyCode.F, false, game)
+        VIM:SendKeyEvent(false, Enum.KeyCode.F, false, game)
     end
-    local function drag(input: InputObject, process: boolean)
-        if not self._dragging then return end
-        if input.UserInputType == Enum.UserInputType.Touch and input ~= active_drag_input then return end
-        if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-            update_drag(input)
-        end
-    end
-    Connections['container_input_began'] = Container.InputBegan:Connect(on_drag)
-    Connections['input_changed'] = UserInputService.InputChanged:Connect(drag)
-    self:removed(function()
-        if self._acrylic_blur then
-            self._acrylic_blur:destroy()
-            self._acrylic_blur = nil
-        end
-        self._ui = nil
-        Connections:disconnect_all()
+end
+local __ParryAnimTrack = nil
+local function __PlayParryAnimation()
+    local Character = __LocalPlayer.Character
+    if not Character then return end
+    local Humanoid = Character:FindFirstChildOfClass('Humanoid')
+    if not Humanoid then return end
+    local Animator = Humanoid:FindFirstChildOfClass('Animator')
+    if not Animator then return end
+
+    local Parry_Animation = __ReplicatedStorage.Shared.SwordAPI.Collection.Default:FindFirstChild('GrabParry')
+    local Current_Sword = Character:GetAttribute('CurrentlyEquippedSword')
+    if not Current_Sword then return end
+    if not Parry_Animation then return end
+
+    local ok, Sword_Data = pcall(function()
+        return __ReplicatedStorage.Shared.ReplicatedInstances.Swords.GetSword:Invoke(Current_Sword)
     end)
-    function self:Update1Run(a)
-        if a == "nil" then
-            Container.BackgroundTransparency = 0.05000000074505806;
-        else
-            pcall(function()
-                Container.BackgroundTransparency = tonumber(a);
-            end);
-        end;
-    end;
-    function self:UIVisiblity()
-        Allusive.Enabled = not Allusive.Enabled;
-    end;
-    function self:change_visiblity(state: boolean)
-        if state then
-            TweenService:Create(Container, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                Size = UDim2.fromOffset(698, 479)
-            }):Play()
-        else
-            TweenService:Create(Container, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                Size = UDim2.fromOffset(104.5, 52)
-            }):Play()
+    if not ok or not Sword_Data or not Sword_Data['AnimationType'] then return end
+
+    for _, object in __ReplicatedStorage.Shared.SwordAPI.Collection:GetChildren() do
+        if object.Name == Sword_Data['AnimationType'] then
+            if object:FindFirstChild('GrabParry') or object:FindFirstChild('Grab') then
+                local sword_animation_type = 'GrabParry'
+                if object:FindFirstChild('Grab') then
+                    sword_animation_type = 'Grab'
+                end
+                Parry_Animation = object[sword_animation_type]
+                break
+            end
         end
     end
-    function self:load()
-        local content = {}
-        for _, object in Allusive:GetDescendants() do
-            if not object:IsA('ImageLabel') then
-                continue
+
+    local Success, Track = pcall(function()
+        return Animator:LoadAnimation(Parry_Animation)
+    end)
+
+    if Success and Track then
+        __ParryAnimTrack = Track
+        if Track.IsPlaying then Track:Stop(0) end
+        Track:Play()
+    end
+end
+
+local __LastExecuteParry = 0
+local function __ExecuteParry()
+    local __NowEP = tick()
+    if (__NowEP - __LastExecuteParry) < 0.01 then return end
+    __LastExecuteParry = __NowEP
+    pcall(__PlayParryAnimation)
+
+    if __ParryRemote then
+        local PlayerPositions = {}
+        for _, char in next, workspace.Alive:GetChildren() do
+            if char:FindFirstChild('HumanoidRootPart') then
+                PlayerPositions[char.Name] = char.HumanoidRootPart.Position
             end
-            table.insert(content, object)
         end
+        local CameraCenter = __Camera.ViewportSize / 2
+        local CameraData = {CameraCenter.X, CameraCenter.Y}
         task.spawn(function()
-            pcall(function() ContentProvider:PreloadAsync(content) end)
-        end)
-        self:get_device()
-        if self._device == 'Mobile' or self._device == 'Unknown' then
-            self:get_screen_scale()
-            self:apply_mobile_scale()
-            Connections['ui_scale'] = workspace.CurrentCamera:GetPropertyChangedSignal('ViewportSize'):Connect(function()
-                self:get_screen_scale()
-                self:apply_mobile_scale()
+            pcall(function()
+                __ParryRemote:FireServer(__PRY_Hash1, __PRY_Hash2, __PRY_Hash3(), 0.025, __Camera.CFrame, PlayerPositions, CameraData, false)
             end)
-        end
-        TweenService:Create(Container, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-            Size = UDim2.fromOffset(698, 479)
-        }):Play()
-        self._acrylic_blur = AcrylicBlur.new(Container)
-        self._ui_loaded = true
-        self:create_configs_tab()
-    end
-    function self:create_configs_tab()
-        local CFG_ICON = 'rbxassetid://107819132007001'
-        local NameFlag = 'roni_cfg_name'
-        local CodeFlag = 'roni_cfg_code'
-        local ListFlag = 'roni_cfg_list'
-        for _, flag in ipairs({
-            NameFlag, CodeFlag, ListFlag,
-            'roni_cfg_module',
-            'roni_cfg_save', 'roni_cfg_load', 'roni_cfg_delete',
-            'roni_cfg_export', 'roni_cfg_import'
-        }) do
-            self._internal_flags[flag] = true
-        end
-        local ConfigsTab = self:create_tab('Configs', CFG_ICON)
-        local Module = ConfigsTab:create_module({
-            title = 'Config Manager',
-            description = 'Save, load and share your configs.',
-            flag = 'roni_cfg_module',
-            rich = false
-        })
-        Module:create_textbox({
-            title = 'Config Name',
-            flag = NameFlag,
-            placeholder = 'Enter a name...'
-        })
-        Module:create_feature({
-            title = 'Save Config',
-            flag = 'roni_cfg_save',
-            disablecheck = true,
-            button_callback = function()
-                local name = self._config._flags[NameFlag] or ""
-                name = tostring(name):match("^%s*(.-)%s*$")
-                if name == "" then
-                    self.SendNotification({ title = 'Configs', text = 'Enter a config name first.', type = 'warn', duration = 4 })
-                    return
-                end
-                self:save_named_config(name)
-                local names = self:get_named_config_names()
-                self._cfg_dropdown_mgr = self._cfg_dropdown_mgr:New({
-                    Order = true,
-                    title = 'Your Configs',
-                    flag = ListFlag,
-                    options = names
-                })
-                self.SendNotification({ title = 'Configs', text = 'Saved "' .. name .. '".', type = 'success', duration = 4 })
-            end
-        })
-        self._cfg_dropdown_mgr = Module:create_dropdown({
-            title = 'Your Configs',
-            flag = ListFlag,
-            options = self:get_named_config_names()
-        })
-        Module:create_feature({
-            title = 'Load',
-            flag = 'roni_cfg_load',
-            disablecheck = true,
-            button_callback = function()
-                local name = self._config._flags[ListFlag]
-                if name == nil or name == "" then
-                    self.SendNotification({ title = 'Configs', text = 'Select a config to load.', type = 'warn', duration = 4 })
-                    return
-                end
-                local ok = self:load_named_config(name)
-                if ok then
-                    self.SendNotification({ title = 'Configs', text = 'Loaded "' .. tostring(name) .. '".', type = 'success', duration = 4 })
-                else
-                    self.SendNotification({ title = 'Configs', text = 'Could not load "' .. tostring(name) .. '".', type = 'error', duration = 4 })
-                end
-            end
-        })
-        Module:create_feature({
-            title = 'Delete',
-            flag = 'roni_cfg_delete',
-            disablecheck = true,
-            button_callback = function()
-                local name = self._config._flags[ListFlag]
-                if name == nil or name == "" then
-                    self.SendNotification({ title = 'Configs', text = 'Select a config to delete.', type = 'warn', duration = 4 })
-                    return
-                end
-                self:delete_named_config(name)
-                self._cfg_dropdown_mgr = self._cfg_dropdown_mgr:New({
-                    Order = true,
-                    title = 'Your Configs',
-                    flag = ListFlag,
-                    options = self:get_named_config_names()
-                })
-                self.SendNotification({ title = 'Configs', text = 'Deleted "' .. tostring(name) .. '".', type = 'success', duration = 4 })
-            end
-        })
-        Module:create_divider({ title = 'Share', showtopic = true })
-        Module:create_textbox({
-            title = 'Share Code',
-            flag = CodeFlag,
-            placeholder = 'Paste a share code or export here...'
-        })
-        Module:create_feature({
-            title = 'Export Code',
-            flag = 'roni_cfg_export',
-            disablecheck = true,
-            button_callback = function()
-                local code = self:encode_share()
-                self._config._flags[CodeFlag] = code
-                Config:save(game.GameId, self._config)
-                local copied = self:set_clipboard(code)
-                local msg = 'Code generated (' .. #code .. ' chars).'
-                if copied then
-                    msg = msg .. ' Copied to clipboard.'
-                else
-                    msg = msg .. ' Shown in the Share Code box.'
-                end
-                self.SendNotification({ title = 'Configs', text = msg, type = 'success', duration = 5 })
-            end
-        })
-        Module:create_feature({
-            title = 'Import Code',
-            flag = 'roni_cfg_import',
-            disablecheck = true,
-            button_callback = function()
-                local code = self._config._flags[CodeFlag] or ""
-                code = tostring(code):match("^%s*(.-)%s*$")
-                if code == "" then
-                    self.SendNotification({ title = 'Configs', text = 'Paste a share code first.', type = 'warn', duration = 4 })
-                    return
-                end
-                local decoded = self:decode_share(code)
-                if not decoded or type(decoded.f) ~= "table" then
-                    self.SendNotification({ title = 'Configs', text = 'Invalid share code.', type = 'error', duration = 4 })
-                    return
-                end
-                self:apply_config(decoded.f)
-                self.SendNotification({ title = 'Configs', text = 'Config imported and applied.', type = 'success', duration = 4 })
-            end
-        })
-    end
-    function self:update_tabs(tab: TextButton)
-        for index, object in Tabs:GetChildren() do
-            if object.Name ~= 'Tab' then
-                continue
-            end
-            if object == tab then
-                if object.BackgroundTransparency ~= 0.5 then
-                    local offset = object.LayoutOrder * (0.113 / 1.3)
-                    TweenService:Create(Pin, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        Position = UDim2.fromScale(0.026, 0.135 + offset)
-                    }):Play()    
-                    TweenService:Create(object, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        BackgroundTransparency = 0.5
-                    }):Play()
-                    TweenService:Create(object.TextLabel, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        TextTransparency = 0.2,
-                        TextColor3 = Color3.fromRGB(255, 255, 255)
-                    }):Play()
-                    TweenService:Create(object.TextLabel.UIGradient, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        Offset = Vector2.new(1, 0)
-                    }):Play()
-                    TweenService:Create(object.Icon, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        ImageTransparency = 0.2,
-                        ImageColor3 = Color3.fromRGB(255, 255, 255)
-                    }):Play()
-                end
-                continue
-            end
-            if object.BackgroundTransparency ~= 1 then
-                TweenService:Create(object, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                    BackgroundTransparency = 1
-                }):Play()
-                TweenService:Create(object.TextLabel, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                    TextTransparency = 0.7,
-                    TextColor3 = Color3.fromRGB(255, 255, 255)
-                }):Play()
-                TweenService:Create(object.TextLabel.UIGradient, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                    Offset = Vector2.new(0, 0)
-                }):Play()
-                TweenService:Create(object.Icon, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                    ImageTransparency = 0.8,
-                    ImageColor3 = Color3.fromRGB(255, 255, 255)
-                }):Play()
-            end
-        end
-    end
-    function self:update_sections(left_section: ScrollingFrame, right_section: ScrollingFrame)
-        for _, object in Sections:GetChildren() do
-            if object == left_section or object == right_section then
-                object.Visible = true
-                continue
-            end
-            object.Visible = false
-        end
-    end
-    function self:create_tab(title: string, icon: string)
-        local TabManager = {}
-        local LayoutOrder = 0;
-        local font_params = Instance.new('GetTextBoundsParams')
-        font_params.Text = title
-        font_params.Font = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
-        font_params.Size = 13
-        font_params.Width = 10000
-        local font_size = Vector2.new(#title * 8, 13)
-        pcall(function()
-            font_size = TextService:GetTextBoundsAsync(font_params)
         end)
-        local first_tab = not Tabs:FindFirstChild('Tab')
-        local Tab = Instance.new('TextButton')
-        Tab.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Regular, Enum.FontStyle.Normal)
-        Tab.TextColor3 = Color3.fromRGB(0, 0, 0)
-        Tab.BorderColor3 = Color3.fromRGB(0, 0, 0)
-        Tab.Text = ''
-        Tab.AutoButtonColor = true
-        Tab.BackgroundTransparency = 1
-        Tab.Name = 'Tab'
-        Tab.Size = UDim2.new(0, 129, 0, 38)
-        Tab.BorderSizePixel = 0
-        Tab.TextSize = 14
-        Tab.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-        Tab.Parent = Tabs
-        Tab.LayoutOrder = self._tab
-        local UICorner = Instance.new('UICorner')
-        UICorner.CornerRadius = UDim.new(0, 6)
-        UICorner.Parent = Tab
-        local TextLabel = Instance.new('TextLabel')
-        TextLabel.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
-        TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-        TextLabel.TextTransparency = 0.7 
-        TextLabel.Text = title
-        TextLabel.Size = UDim2.new(0, font_size.X, 0, 16)
-        TextLabel.AnchorPoint = Vector2.new(0, 0.5)
-        TextLabel.Position = UDim2.new(0.2400001734495163, 0, 0.5, 0)
-        TextLabel.BackgroundTransparency = 1
-        TextLabel.TextXAlignment = Enum.TextXAlignment.Left
-        TextLabel.BorderSizePixel = 0
-        TextLabel.BorderColor3 = Color3.fromRGB(0, 0, 0)
-        TextLabel.TextSize = 13
-        TextLabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-        TextLabel.Parent = Tab
-        local UIGradient = Instance.new('UIGradient')
-        UIGradient.Color = ColorSequence.new{
-            ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
-            ColorSequenceKeypoint.new(0.7, Color3.fromRGB(155, 155, 155)),
-            ColorSequenceKeypoint.new(1, Color3.fromRGB(58, 58, 58))
+        __PendingParry = tick()
+        __LastFiredTick = tick()
+        return
+    end
+
+    __SimulateInput()
+    __PendingParry = tick()
+    __LastFiredTick = tick()
+end
+function __PredictBall(ball, seconds)
+    if not ball then return Vector3.zero end
+    local __Zoomies = ball:FindFirstChild('zoomies')
+    if not __Zoomies then return __GetServerBallPosition(ball) end
+    local basePos = __GetServerBallPosition(ball)
+    local ping = __GetPing()
+    local pred_time = math.clamp(ping / 1000 + 0.05, 0.05, 0.15)
+    return basePos + __Zoomies.VectorVelocity * pred_time
+end
+local __LastSoFFire = 0
+task.spawn(function()
+    while true do
+        if __AmferConfig.Combat.AntiSlashOfFury and __SlashOfFuryActive and __SlashOfFuryCount > 0 and __SlashOfFuryCount < 32 then
+            local __NowSoF = tick()
+            local __SoFGap = math.clamp(0.05 + __GetPing() / 2000, 0.05, 0.12)
+            if (__NowSoF - __LastSoFFire) >= __SoFGap and __ParryReady() then
+                local __BallSoF = __RealBall
+                if __BallSoF then
+                    local __RootSoF = __RootPart()
+                    if __RootSoF then
+                        local __DistSoF = (__RootSoF.Position - __BallSoF.Position).Magnitude
+                        if __DistSoF <= 20 then
+                            __ExecuteParry()
+                            __LastSoFFire = __NowSoF
+                            __LastFiredTick = __NowSoF
+                        end
+                    end
+                end
+            end
+        end
+        task.wait()
+    end
+end)
+function __GetBallFuture(seconds)
+    return __PredictBall(__RealBall, seconds or (1 / 10))
+end
+local function __BallIsLookAt(ball)
+    local __Root = __RootPart()
+    if not __Root or not ball then return false end
+    local __BallFuture = __PredictBall(ball, 1 / 10)
+    local __Distance = (__Root.Position - __GetServerBallPosition(ball))
+    local __Look = (CFrame.lookAt(__GetServerBallPosition(ball), __BallFuture)).LookVector
+    local __Dot = __Distance.Unit:Dot(__Look)
+    if (__BallFuture - __Root.Position).Magnitude <= (__BallSpeedView / 1.25) then
+        return true
+    end
+    if __IsClash and __AmferConfig.Combat.ClashMode then
+        return true
+    end
+    if __Dot >= 0.1 or (ball:GetAttribute('target') == tostring(__LocalPlayer) and __Distance.Magnitude <= 30) then 
+        return true
+    end
+    return false
+end
+local function __IsWalkBetter(target)
+    local __Root = __RootPart()
+    if not __Root then return false end
+    local __Vel = __Root.Velocity / 6
+    local __Normal = __Root.Position
+    local __Feature = __Normal + Vector3.new(__Vel.X, 0, __Vel.Z)
+    local __Dist1 = (target - __Normal).Magnitude
+    local __Dist2 = (target - __Feature).Magnitude
+    return __Dist1 < __Dist2
+end
+local function __UpdateBall()
+    local __BallChildren = __Balls:GetChildren()
+    for _, v in ipairs(__BallChildren) do
+        if v:GetAttribute('realBall') == true then
+            if v:GetAttribute('RBX') then
+                v:SetAttribute('RBX', true)
+                if getfenv()['_SignalTarget'] then getfenv()['_SignalTarget']:Disconnect() end
+                getfenv()['_SignalTarget'] = v:GetAttributeChangedSignal("target"):Connect(function()
+                    if v and tostring(v:GetAttribute('target')) ~= tostring(__LocalPlayer) and v:GetAttribute('target') ~= "amfer-on-top" then
+                        __LastPlayerTarget = __Players:FindFirstChild(v:GetAttribute('target')) or __Alive:FindFirstChild(v:GetAttribute('target'))
+                    else
+                        local __Dist = __GetDistance(v.Position)
+                        if __Dist <= 10 then
+                            if __AmferConfig.Combat.AutoParry then
+                                local __Grad = __ResolveCooldownGradient()
+                                if not __Grad or __Grad.Offset.Y >= 0.49 then
+                                    __ExecuteParry()
+                                    __LastFiredTick = tick()
+                                end
+                            end
+                        end
+                    end
+                end)
+            end
+            __RealBall = v
+        else
+            __FakeBall = v
+            local __MainFunc = getfenv()['MainFunction']
+            if __MainFunc then
+                if not v:GetAttribute('RBX') then
+                    v:SetAttribute('RBX', true)
+                    if getfenv()['_SignalPos'] then getfenv()['_SignalPos']:Disconnect() end
+                    getfenv()['_SignalPos'] = v:GetPropertyChangedSignal('Position'):Connect(__MainFunc)
+                end
+            end
+        end
+    end
+    if #__BallChildren <= 0 then __IsClash = false end
+end
+local function __GetCD()
+    local __Grad = __ResolveCooldownGradient()
+    if not __Grad then return 0 end
+    return __Grad.Offset.Y
+end
+__LocalPlayer.CharacterAdded:Connect(function()
+    __IsClash = false
+    __CalaTimeClash = 0.3
+end)
+local __UpdateBallTimer = tick() + 0.4
+local __MyParryTime = tick()
+local __TactCacheVal = false
+local __TactCacheT = 0
+local function __MainLogic()
+    if tick() > __UpdateBallTimer then
+        task.spawn(__UpdateBall)
+        __UpdateBallTimer = tick()
+    end
+    if __LocalPlayer.Character then
+        local __Root = __RootPart()
+        if __Root then __MyPosition = __Root.Position end
+    end
+    if __RealBall and __FakeBall and __AmferConfig.Combat.AutoParry and __RealBall:FindFirstChild('zoomies') then
+        local __Ping = tonumber(__GetPing())
+        local __CD = __GetCD()
+        local __RealVel = __RealBall.zoomies.VectorVelocity.Magnitude
+        local __CalcSpeed = math.max(__RealVel / math.clamp((500 / __Ping), 0, 3.15), 15.5)
+        
+        local __BallPos = __GetBallFuture(1 / 10)
+        local __OldVelo = __GetDistance()
+        local __BallDist = __GetDistance(__BallPos)
+        local __Tornado = __Workspace.Runtime:FindFirstChild('Tornado')
+        if __Tornado then
+            local __Elapsed = (tick() - __TornadoTime)
+            local __Duration = (__Tornado:GetAttribute('TornadoTime') or 1) + 0.314159
+            if __Elapsed < __Duration then return end
+        end
+        local __IsCD = tonumber(__CD) > -0.25 or tonumber(__CD) == -0.5
+        __BallSpeedView = __CalcSpeed
+        if __AmferConfig.Combat.Visualize then
+            local archPos = typeof(__OldVelo) == "Vector3" and __OldVelo or (__MyPosition or Vector3.zero)
+            __ArchPart.CFrame = CFrame.new(archPos)
+            __ArchPart.Size = Vector3.new(__CalcSpeed, __CalcSpeed, __CalcSpeed)
+        else
+            __ArchPart.CFrame = CFrame.new(__MyPosition or Vector3.zero) * CFrame.new(0,-10000,0)
+            __ArchPart.Size = Vector3.new(0,0,0)
+        end
+        if tonumber(__Ping) <= 450 then
+            __IsLookAt = __BallIsLookAt(__RealBall)
+        else
+            __IsLookAt = true
+        end
+        if __AmferConfig.Combat.AutoAbility then
+            if tonumber(__CD) <= -0.25 and tonumber(__CD) ~= -0.5 then
+                __ReplicatedStorage.Remotes.AbilityButtonPress:Fire()
+            end
+        end
+        if __RealVel <= 0.5 then
+            if __RealBall:GetAttribute('target') == "amfer-on-top" then
+                task.spawn(__RealBall.SetAttribute, __RealBall, 'target', tostring(__LocalPlayer))
+            end
+        end
+        local __Block = __ShouldBlockParry()
+        
+        
+        local __FiredParry = false
+        if not __Phantom and not __Block then
+            for _, __B in ipairs(__Balls:GetChildren()) do
+                if __ShouldParryNow(__B) then
+                    __ArchPart.Color = Color3.fromRGB(255, 0, 0)
+                    task.spawn(__B.SetAttribute, __B, 'target', "amfer-on-top")
+                    __ExecuteParry()
+                    __MyParryTime = tick()
+                    __LastFiredTick = __MyParryTime
+                    __FiredParry = true
+                    break
+                end
+            end
+        end
+        if not __FiredParry then
+            __ArchPart.Color = Color3.fromRGB(26, 255, 0)
+        end
+        __Camera.CameraSubject = __LocalPlayer.Character:FindFirstChildWhichIsA('Humanoid')
+    else
+        if __LocalPlayer.Character then
+            __Camera.CameraSubject = __LocalPlayer.Character:FindFirstChildWhichIsA('Humanoid')
+        end
+    end
+    if __LocalPlayer.Character then
+        if __AmferConfig.Client.WsToggle then
+            __LocalPlayer.Character:FindFirstChildWhichIsA('Humanoid').WalkSpeed = __AmferConfig.Client.WalkSpeed
+        end
+        if __AmferConfig.Client.JpToggle then
+            __LocalPlayer.Character:FindFirstChildWhichIsA('Humanoid').JumpPower = __AmferConfig.Client.JumpPower
+        end
+    end
+    if __AmferConfig.Client.Status then
+        __StatusGui.Enabled = true
+        local __Target = __RealBall and __RealBall:GetAttribute('target') or "None"
+        local __FPSDisp
+        if __UserFPS <= 15 then __FPSDisp = tostring(__UserFPS).." (BAD)"
+        elseif __UserFPS <= 30 then __FPSDisp = tostring(__UserFPS).." (okay)"
+        elseif __UserFPS <= 60 then __FPSDisp = tostring(__UserFPS).." (Good)"
+        else __FPSDisp = tostring(__UserFPS).." (60+)" end
+        __StatusLabel.Text = "          Target: "..tostring(__Target)..' , FPS: '..__FPSDisp
+    else
+        __StatusGui.Enabled = false
+    end
+end
+__TabCombat:create_toggle('auto_parry', {
+    title = 'auto parry',
+    default = true,
+    callback = function(val) __AmferConfig.Combat.AutoParry = val end
+})
+__TabCombat:create_dropdown('curve_mode', {
+    title = 'curve mode',
+    options = {'custom', 'straight', 'random', 'backwards'},
+    default = 1
+})
+__TabCombat:create_toggle('visualize', {
+    title = 'visualizer',
+    default = true,
+    callback = function(val) __AmferConfig.Combat.Visualize = val end
+})
+__TabCombat:create_toggle('auto_ability', {
+    title = 'auto ability',
+    callback = function(val) __AmferConfig.Combat.AutoAbility = val end
+})
+__TabCombat:create_toggle('anti_curve', {
+    title = 'anti curve detection',
+    default = true,
+    callback = function(val) __AmferConfig.Combat.AntiCurve = val end
+})
+__TabCombat:create_toggle('anti_infinity', {
+    title = 'anti infinity',
+    default = true,
+    callback = function(val) __AmferConfig.Combat.AntiInfinity = val end
+})
+__TabCombat:create_toggle('anti_death_slash', {
+    title = 'anti death slash',
+    default = true,
+    callback = function(val) __AmferConfig.Combat.AntiDeathSlash = val end
+})
+__TabCombat:create_toggle('anti_time_hole', {
+    title = 'anti time hole',
+    default = true,
+    callback = function(val) __AmferConfig.Combat.AntiTimeHole = val end
+})
+__TabCombat:create_toggle('anti_slash_of_fury', {
+    title = 'anti slash of fury (spam < 32)',
+    default = true,
+    callback = function(val) __AmferConfig.Combat.AntiSlashOfFury = val end
+})
+__TabCombat:create_toggle('anti_phantom', {
+    title = 'anti phantom',
+    default = true,
+    callback = function(val) __AmferConfig.Combat.AntiPhantom = val end
+})
+__TabCombat:create_toggle('anti_singularity', {
+    title = 'anti singularity cape',
+    default = true,
+    callback = function(val) __AmferConfig.Combat.AntiSingularity = val end
+})
+__TabCombat:create_toggle('anti_combo', {
+    title = 'anti combo counter',
+    default = true,
+    callback = function(val) __AmferConfig.Combat.AntiCombo = val end
+})
+__TabCombat:create_toggle('cooldown_protection', {
+    title = 'cooldown protection',
+    default = false,
+    callback = function(val) __AmferConfig.Combat.CooldownProtection = val end
+})
+__TabVisuals:create_toggle('no_particle', {
+    title = 'no particle',
+    callback = function(val)
+        __AmferConfig.Particle.NoParticle = val
+        if __LocalPlayer.PlayerScripts.EffectScripts:FindFirstChild("ClientFX") then
+            __LocalPlayer.PlayerScripts.EffectScripts.ClientFX.Disabled = val
+        end
+    end
+})
+__TabVisuals:create_slider('fps_cap', {
+    title = 'fps cap',
+    min = 5,
+    max = 360,
+    rounding = 0,
+    default = 144,
+    callback = function(val) setfpscap(tonumber(val)) end
+})
+__TabMisc:create_toggle('walkspeed', {
+    title = 'walkspeed value',
+    callback = function(val)
+        __AmferConfig.Client.WsToggle = val
+        if not val and __LocalPlayer.Character then
+            __LocalPlayer.Character:FindFirstChildWhichIsA('Humanoid').WalkSpeed = 36
+        end
+    end
+})
+__TabMisc:create_slider('ws_val', {
+    title = 'ws value',
+    min = 16,
+    max = 200,
+    default = 36,
+    callback = function(val) __AmferConfig.Client.WalkSpeed = val end
+})
+__TabMisc:create_toggle('jumppower', {
+    title = 'jump power enable',
+    callback = function(val)
+        __AmferConfig.Client.JpToggle = val
+        if not val and __LocalPlayer.Character then
+            __LocalPlayer.Character:FindFirstChildWhichIsA('Humanoid').JumpPower = 50
+        end
+    end
+})
+__TabMisc:create_slider('jp_val', {
+    title = 'jp value',
+    min = 50,
+    max = 400,
+    default = 50,
+    callback = function(val) __AmferConfig.Client.JumpPower = val end
+})
+__TabMisc:create_toggle('status', {
+    title = 'status ui',
+    callback = function(val) __AmferConfig.Client.Status = val end
+})
+__TabMisc:create_keybind('minimize_bind', {
+    title = 'Minimize UI',
+    default = getgenv().sets.keybind,
+    mode = 'Toggle',
+    callback = function(keybind)
+        if __Interface and __Interface.Minimize then __Interface:Minimize() end
+        getgenv().sets.keybind = keybind
+    end
+})
+task.spawn(function()
+    local __MainLogicGate = 0
+    local function __MainLogicGated()
+        local __T = tick()
+        if (__T - __MainLogicGate) < 0.008 then return end
+        __MainLogicGate = __T
+        __MainLogic()
+    end
+    __RunService.RenderStepped:Connect(__MainLogicGated)
+    __RunService.Heartbeat:Connect(__MainLogicGated)
+    __RunService.PreSimulation:Connect(__MainLogicGated)
+
+    local __FPSCount = 0
+    local __FPSWal = tick()
+    __RunService.RenderStepped:Connect(function()
+        if tick() > __FPSWal then
+            __UserFPS = __FPSCount
+            __FPSCount = 0
+            __FPSWal = tick() + 1
+        else
+            __FPSCount = __FPSCount + 1
+        end
+    end)
+    __Workspace.ChildAdded:Connect(function(child)
+        if __AmferConfig.Particle.NoParticle then
+            local __N = tostring(child)
+            if __N == "clash" or __N == "shine" then
+                child.Anchored = true
+                child.CFrame = __HidenCFrame
+                child.Size = Vector3.one
+            end
+        end
+    end)
+    getfenv()['MainFunction'] = __MainLogic
+end)
+local __ReplicatedRemotes = __ReplicatedStorage:WaitForChild("Remotes")
+if __ReplicatedRemotes:FindFirstChild("ParrySuccessAll") then
+    __ReplicatedRemotes.ParrySuccessAll.OnClientEvent:Connect(function(a1, MyCharacter)
+        if __LocalPlayer.Character and __LocalPlayer.Character:FindFirstChild('HumanoidRootPart') == MyCharacter then
+            __ParryTimeNow = tick()
+            __ParryTimeViewer = (__ParryTimeNow - __ParryLastTime)
+            __ParryLastTime = __ParryTimeNow
+            __LastAckTick = __ParryTimeNow
+            __PendingParry = nil
+        end
+    end)
+end
+if __ReplicatedRemotes:FindFirstChild("Phantom") then
+    __ReplicatedRemotes.Phantom.OnClientEvent:Connect(function(a, b)
+        __Phantom = (b.Name == tostring(__LocalPlayer))
+    end)
+end
+__Balls.ChildAdded:Connect(function() __Phantom = false end)
+__Balls.ChildRemoved:Connect(function() __Phantom = false end)
+__Workspace.Runtime.ChildAdded:Connect(function(v) if v.Name == 'Tornado' then __TornadoTime = tick() end end)
+local __TabUnlocker = __Interface:create_tab('Unlocker', 'unlock')
+do
+    local __HttpService = cloneref(game:GetService("HttpService"))
+    local __TextChatService = cloneref(game:GetService("TextChatService"))
+    local __PlayerGui = __LocalPlayer:WaitForChild("PlayerGui")
+    local __UnlockForcedOwnedSet = {}
+    local __UnlockSelectedExplosion = nil
+    local __UnlockOriginalFields = {}
+    local __UNLOCK_SAVE_FILE = "RoniHub/unlock_save.json"
+    local __UnlockPersist = { FakeFavorites = {} }
+    local __UnlockHasFiles = (typeof(writefile) == "function") and (typeof(readfile) == "function") and (typeof(isfile) == "function")
+
+    getgenv().__RoniUnlockEnabled = false
+    getgenv().__RoniSwordName = nil
+    _G.__RoniTitleState = _G.__RoniTitleState or { Selected = nil }
+
+    local function __UnlockEnsureFolder()
+        if typeof(isfolder) == "function" and typeof(makefolder) == "function" then
+            if not isfolder("RoniHub") then pcall(makefolder, "RoniHub") end
+        end
+    end
+
+    local function __UnlockLoadPersist()
+        if not __UnlockHasFiles then return end
+        __UnlockEnsureFolder()
+        if isfile(__UNLOCK_SAVE_FILE) then
+            local ok, data = pcall(function() return __HttpService:JSONDecode(readfile(__UNLOCK_SAVE_FILE)) end)
+            if ok and type(data) == "table" then
+                __UnlockPersist.FakeFavorites = data.FakeFavorites or {}
+            end
+        end
+    end
+
+    local __UnlockSavePending = false
+    local function __UnlockSavePersist()
+        if not __UnlockHasFiles then return end
+        if __UnlockSavePending then return end
+        __UnlockSavePending = true
+        task.delay(0.3, function()
+            __UnlockSavePending = false
+            __UnlockEnsureFolder()
+            pcall(function()
+                writefile(__UNLOCK_SAVE_FILE, __HttpService:JSONEncode(__UnlockPersist))
+            end)
+        end)
+    end
+
+    __UnlockLoadPersist()
+
+    task.spawn(function()
+        local __ShopController = require(__ReplicatedStorage.Controllers.UI.ShopController)
+        local __InventoryController = require(__ReplicatedStorage.Controllers.Trading.InventoryController)
+        local __Swords = require(__ReplicatedStorage.Shared.ReplicatedInstances.Swords)
+        local __Statable = require(__ReplicatedStorage.Shared.Statable)
+        local __Inventory_Shared = require(__ReplicatedStorage.Shared.Inventory.Shared)
+        local __ItemInfo = require(__ReplicatedStorage.Shared.ItemInfo)
+        local __Shop = __PlayerGui:WaitForChild("Shop")
+        local __BuyButton = __Shop.Holder.InfoBG.BuyButton
+        local __DeleteButton = __Shop.Holder.InfoBG.Delete
+        local __FavoriteButton = __Shop.Holder.Favorite
+        local __ShopDisabledConns = {}
+        local __UNLOCK_TYPES = { Sword = true, Explosion = true }
+        local __FAVORITE_TYPES = { Sword = true, Explosion = true, Ability = true }
+        local __FakeFavorites = __UnlockPersist.FakeFavorites
+        local __FAV_IMG = {
+            [true]  = { Image = "rbxassetid://15697987058", HoverImage = "rbxassetid://15697983062" },
+            [false] = { Image = "rbxassetid://15697981750", HoverImage = "rbxassetid://15697987058" },
         }
-        UIGradient.Parent = TextLabel
-        local Icon = Instance.new('ImageLabel')
-        Icon.ScaleType = Enum.ScaleType.Fit
-        Icon.ImageTransparency = 0.800000011920929
-        Icon.BorderColor3 = Color3.fromRGB(0, 0, 0)
-        Icon.AnchorPoint = Vector2.new(0, 0.5)
-        Icon.BackgroundTransparency = 1
-        Icon.Position = UDim2.new(0.10000000149011612, 0, 0.5, 0)
-        Icon.Name = 'Icon'
-        Icon.Image = icon
-        Icon.Size = UDim2.new(0, 12, 0, 12)
-        Icon.BorderSizePixel = 0
-        Icon.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-        Icon.Parent = Tab
-        local LeftSection = Instance.new('ScrollingFrame')
-        LeftSection.Name = 'LeftSection'
-        LeftSection.AutomaticCanvasSize = Enum.AutomaticSize.XY
-        LeftSection.ScrollBarThickness = 0
-        LeftSection.Size = UDim2.new(0, 243, 0, 445)
-        LeftSection.Selectable = false
-        LeftSection.AnchorPoint = Vector2.new(0, 0.5)
-        LeftSection.ScrollBarImageTransparency = 1
-        LeftSection.BackgroundTransparency = 1
-        LeftSection.Position = UDim2.new(0.2594326436519623, 0, 0.5, 0)
-        LeftSection.BorderColor3 = Color3.fromRGB(0, 0, 0)
-        LeftSection.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-        LeftSection.BorderSizePixel = 0
-        LeftSection.CanvasSize = UDim2.new(0, 0, 0.5, 0)
-        LeftSection.Visible = false
-        LeftSection.Parent = Sections
-        local UIListLayout = Instance.new('UIListLayout')
-        UIListLayout.Padding = UDim.new(0, 11)
-        UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-        UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-        UIListLayout.Parent = LeftSection
-        local UIPadding = Instance.new('UIPadding')
-        UIPadding.PaddingTop = UDim.new(0, 1)
-        UIPadding.Parent = LeftSection
-        local RightSection = Instance.new('ScrollingFrame')
-        RightSection.Name = 'RightSection'
-        RightSection.AutomaticCanvasSize = Enum.AutomaticSize.XY
-        RightSection.ScrollBarThickness = 0
-        RightSection.Size = UDim2.new(0, 243, 0, 445)
-        RightSection.Selectable = false
-        RightSection.AnchorPoint = Vector2.new(0, 0.5)
-        RightSection.ScrollBarImageTransparency = 1
-        RightSection.BackgroundTransparency = 1
-        RightSection.Position = UDim2.new(0.6290000081062317, 0, 0.5, 0)
-        RightSection.BorderColor3 = Color3.fromRGB(0, 0, 0)
-        RightSection.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-        RightSection.BorderSizePixel = 0
-        RightSection.CanvasSize = UDim2.new(0, 0, 0.5, 0)
-        RightSection.Visible = false
-        RightSection.Parent = Sections
-        local UIListLayout = Instance.new('UIListLayout')
-        UIListLayout.Padding = UDim.new(0, 11)
-        UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-        UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-        UIListLayout.Parent = RightSection
-        local UIPadding = Instance.new('UIPadding')
-        UIPadding.PaddingTop = UDim.new(0, 1)
-        UIPadding.Parent = RightSection
-        self._tab += 1
-        if first_tab then
-            self:update_tabs(Tab)
-            self:update_sections(LeftSection, RightSection)
-        end
-        Tab.MouseButton1Click:Connect(function()
-            self:update_tabs(Tab)
-            self:update_sections(LeftSection, RightSection)
-        end)
-        function TabManager:create_module(settings: any)
-            local LayoutOrderModule = 0;
-            local ModuleManager = {
-                _state = false,
-                _size = 0,
-                _multiplier = 0
-            }
-            if settings.section == 'right' then
-                settings.section = RightSection
-            else
-                settings.section = LeftSection
-            end
-            local Module = Instance.new('Frame')
-            Module.ClipsDescendants = true
-            Module.BorderColor3 = Color3.fromRGB(0, 0, 0)
-            Module.BackgroundTransparency = 0.5
-            Module.Position = UDim2.new(0.004115226212888956, 0, 0, 0)
-            Module.Name = 'Module'
-            Module.Size = UDim2.new(0, 241, 0, 93)
-            Module.BorderSizePixel = 0
-            Module.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-            Module.Parent = settings.section
-            Module.LayoutOrder = LayoutOrder
-            LayoutOrder += 1
-            local UIListLayout = Instance.new('UIListLayout')
-            UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-            UIListLayout.Parent = Module
-            local UICorner = Instance.new('UICorner')
-            UICorner.CornerRadius = UDim.new(0, 6)
-            UICorner.Parent = Module
-            local UIStroke = Instance.new('UIStroke')
-            UIStroke.Color = Color3.fromRGB(90, 90, 90)
-            UIStroke.Transparency = 0.7
-            UIStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-            UIStroke.Parent = Module
-            local Header = Instance.new('TextButton')
-            Header.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Regular, Enum.FontStyle.Normal)
-            Header.TextColor3 = Color3.fromRGB(0, 0, 0)
-            Header.BorderColor3 = Color3.fromRGB(0, 0, 0)
-            Header.Text = ''
-            Header.AutoButtonColor = true
-            Header.BackgroundTransparency = 1
-            Header.Name = 'Header'
-            Header.Size = UDim2.new(0, 241, 0, 93)
-            Header.BorderSizePixel = 0
-            Header.TextSize = 14
-            Header.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-            Header.Parent = Module
-            local Icon = Instance.new('ImageLabel')
-            Icon.ImageColor3 = Color3.fromRGB(255, 255, 255)
-            Icon.ScaleType = Enum.ScaleType.Fit
-            Icon.ImageTransparency = 0.699999988079071
-            Icon.BorderColor3 = Color3.fromRGB(0, 0, 0)
-            Icon.AnchorPoint = Vector2.new(0, 0.5)
-            Icon.Image = 'rbxassetid://107819132007001'
-            Icon.BackgroundTransparency = 1
-            Icon.Position = UDim2.new(0.07100000232458115, 0, 0.8199999928474426, 0)
-            Icon.Name = 'Icon'
-            Icon.Size = UDim2.new(0, 15, 0, 15)
-            Icon.BorderSizePixel = 0
-            Icon.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-            Icon.Parent = Header
-            local ModuleName = Instance.new('TextLabel')
-            ModuleName.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Bold, Enum.FontStyle.Normal)
-            ModuleName.TextColor3 = Color3.fromRGB(255, 255, 255)
-            ModuleName.TextTransparency = 0.20000000298023224
-            if not settings.rich then
-                ModuleName.Text = settings.title or "Skibidi"
-            else
-                ModuleName.RichText = true
-                ModuleName.Text = settings.richtext or "<font color='rgb(255,0,0)'>Allusive</font> user"
-            end;
-            ModuleName.Name = 'ModuleName'
-            ModuleName.Size = UDim2.new(0, 205, 0, 13)
-            ModuleName.AnchorPoint = Vector2.new(0, 0.5)
-            ModuleName.Position = UDim2.new(0.0729999989271164, 0, 0.23999999463558197, 0)
-            ModuleName.BackgroundTransparency = 1
-            ModuleName.TextXAlignment = Enum.TextXAlignment.Left
-            ModuleName.BorderSizePixel = 0
-            ModuleName.BorderColor3 = Color3.fromRGB(0, 0, 0)
-            ModuleName.TextSize = 13
-            ModuleName.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-            ModuleName.Parent = Header
-            local Description = Instance.new('TextLabel')
-            Description.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Regular, Enum.FontStyle.Normal)
-            Description.TextColor3 = Color3.fromRGB(255, 255, 255)
-            Description.TextTransparency = 0.55
-            Description.Text = settings.description
-            Description.Name = 'Description'
-            Description.Size = UDim2.new(0, 205, 0, 13)
-            Description.AnchorPoint = Vector2.new(0, 0.5)
-            Description.Position = UDim2.new(0.0729999989271164, 0, 0.41999998688697815, 0)
-            Description.BackgroundTransparency = 1
-            Description.TextXAlignment = Enum.TextXAlignment.Left
-            Description.BorderSizePixel = 0
-            Description.BorderColor3 = Color3.fromRGB(0, 0, 0)
-            Description.TextSize = 10
-            Description.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-            Description.Parent = Header
-            local Toggle = Instance.new('Frame')
-            Toggle.Name = 'Toggle'
-            Toggle.BackgroundTransparency = 0.699999988079071
-            Toggle.Position = UDim2.new(0.8199999928474426, 0, 0.7570000290870667, 0)
-            Toggle.BorderColor3 = Color3.fromRGB(0, 0, 0)
-            Toggle.Size = UDim2.new(0, 25, 0, 12)
-            Toggle.BorderSizePixel = 0
-            Toggle.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-            Toggle.Parent = Header
-            local UICorner = Instance.new('UICorner')
-            UICorner.CornerRadius = UDim.new(1, 0)
-            UICorner.Parent = Toggle
-            local Circle = Instance.new('Frame')
-            Circle.BorderColor3 = Color3.fromRGB(0, 0, 0)
-            Circle.AnchorPoint = Vector2.new(0, 0.5)
-            Circle.BackgroundTransparency = 0.20000000298023224
-            Circle.Position = UDim2.new(0, 0, 0.5, 0)
-            Circle.Name = 'Circle'
-            Circle.Size = UDim2.new(0, 12, 0, 12)
-            Circle.BorderSizePixel = 0
-            Circle.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
-            Circle.Parent = Toggle
-            local UICorner = Instance.new('UICorner')
-            UICorner.CornerRadius = UDim.new(1, 0)
-            UICorner.Parent = Circle
-            local Divider = Instance.new('Frame')
-            Divider.BorderColor3 = Color3.fromRGB(0, 0, 0)
-            Divider.AnchorPoint = Vector2.new(0.5, 0)
-            Divider.BackgroundTransparency = 0.5
-            Divider.Position = UDim2.new(0.5, 0, 1, 0)
-            Divider.Name = 'Divider'
-            Divider.Size = UDim2.new(0, 241, 0, 1)
-            Divider.BorderSizePixel = 0
-            Divider.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-            Divider.Parent = Header
-            local Options = Instance.new('Frame')
-            Options.Name = 'Options'
-            Options.BackgroundTransparency = 1
-            Options.Position = UDim2.new(0, 0, 1, 0)
-            Options.BorderColor3 = Color3.fromRGB(0, 0, 0)
-            Options.Size = UDim2.new(0, 241, 0, 8)
-            Options.BorderSizePixel = 0
-            Options.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-            Options.Parent = Module
-            local UIPadding = Instance.new('UIPadding')
-            UIPadding.PaddingTop = UDim.new(0, 8)
-            UIPadding.PaddingBottom = UDim.new(0, 6)
-            UIPadding.Parent = Options
-            local UIListLayout = Instance.new('UIListLayout')
-            UIListLayout.Padding = UDim.new(0, 8)
-            UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-            UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-            UIListLayout.Parent = Options
-            function ModuleManager:change_state(state: boolean)
-                self._state = state
-                if self._state then
-                    TweenService:Create(Module, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        Size = UDim2.fromOffset(241, 93 + self._size + self._multiplier)
-                    }):Play()
-                    TweenService:Create(Toggle, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-                    }):Play()
-                    TweenService:Create(Circle, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        BackgroundColor3 = Color3.fromRGB(255, 255, 255),
-                        Position = UDim2.fromScale(0.53, 0.5)
-                    }):Play()
-                else
-                    TweenService:Create(Module, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        Size = UDim2.fromOffset(241, 93)
-                    }):Play()
-                    TweenService:Create(Toggle, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-                    }):Play()
-                    TweenService:Create(Circle, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        BackgroundColor3 = Color3.fromRGB(80, 80, 80),
-                        Position = UDim2.fromScale(0, 0.5)
-                    }):Play()
+
+        local function __BypassSwordOwnership()
+            if not __Swords or type(__Swords.EquipSwordTo) ~= "function" then return end
+            pcall(function()
+                for i = 1, 15 do
+                    local ok, val = pcall(debug.getupvalue, __Swords.EquipSwordTo, i)
+                    if ok and type(val) == "boolean" and val == true then
+                        pcall(debug.setupvalue, __Swords.EquipSwordTo, i, false)
+                    end
                 end
-                Library._config._flags[settings.flag] = self._state
-                Config:save(game.GameId, Library._config)
-                if settings.callback then
-                    settings.callback(self._state)
-                end
-            end
-            Library:register_flag(settings.flag, 'boolean')
-            if Library:flag_type(settings.flag, 'boolean') then
-                ModuleManager._state = Library._config._flags[settings.flag]
-                if settings.callback then
-                    settings.callback(ModuleManager._state)
-                end
-                if ModuleManager._state then
-                    Toggle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-                    Circle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-                    Circle.Position = UDim2.fromScale(0.53, 0.5)
-                end
-            end
-            Header.MouseButton1Click:Connect(function()
-                ModuleManager:change_state(not ModuleManager._state)
             end)
-            function ModuleManager:create_paragraph(settings: any)
-                LayoutOrderModule = LayoutOrderModule + 1;
-                local ParagraphManager = {}
-                if self._size == 0 then
-                    self._size = 17
-                end
-                self._size += settings.customScale or 70
-                if ModuleManager._state then
-                    Module.Size = UDim2.fromOffset(241, 93 + self._size + self._multiplier)
-                end
-                Options.Size = UDim2.fromOffset(241, self._size)
-                local Paragraph = Instance.new('Frame')
-                Paragraph.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-                Paragraph.BackgroundTransparency = 0.1
-                Paragraph.Size = UDim2.new(0, 207, 0, 30) 
-                Paragraph.BorderSizePixel = 0
-                Paragraph.Name = "Paragraph"
-                Paragraph.AutomaticSize = Enum.AutomaticSize.Y 
-                Paragraph.Parent = Options
-                Paragraph.LayoutOrder = LayoutOrderModule;
-                local UICorner = Instance.new('UICorner')
-                UICorner.CornerRadius = UDim.new(0, 4)
-                UICorner.Parent = Paragraph
-                local Title = Instance.new('TextLabel')
-                Title.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Bold, Enum.FontStyle.Normal)
-                Title.TextColor3 = Color3.fromRGB(210, 210, 210)
-                Title.Text = settings.title or "Title"
-                Title.Size = UDim2.new(1, -10, 0, 20)
-                Title.Position = UDim2.new(0, 5, 0, 5)
-                Title.BackgroundTransparency = 1
-                Title.TextXAlignment = Enum.TextXAlignment.Left
-                Title.TextYAlignment = Enum.TextYAlignment.Center
-                Title.TextSize = 12
-                Title.AutomaticSize = Enum.AutomaticSize.Y
-                Title.Parent = Paragraph
-                local Body = Instance.new('TextLabel')
-                Body.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Regular, Enum.FontStyle.Normal)
-                Body.TextColor3 = Color3.fromRGB(220, 220, 220)
-                if not settings.rich then
-                    Body.Text = settings.text or "Skibidi"
-                else
-                    Body.RichText = true
-                    Body.Text = settings.richtext or "<font color='rgb(255,0,0)'>Allusive</font> user"
-                end
-                Body.Size = UDim2.new(1, -10, 0, 20)
-                Body.Position = UDim2.new(0, 5, 0, 30)
-                Body.BackgroundTransparency = 1
-                Body.TextXAlignment = Enum.TextXAlignment.Left
-                Body.TextYAlignment = Enum.TextYAlignment.Top
-                Body.TextSize = 11
-                Body.TextWrapped = true
-                Body.AutomaticSize = Enum.AutomaticSize.Y
-                Body.Parent = Paragraph
-                Paragraph.MouseEnter:Connect(function()
-                    TweenService:Create(Paragraph, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        BackgroundColor3 = Color3.fromRGB(42, 42, 42)
-                    }):Play()
-                end)
-                Paragraph.MouseLeave:Connect(function()
-                    TweenService:Create(Paragraph, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-                    }):Play()
-                end)
-                return ParagraphManager
-            end
-            function ModuleManager:create_text(settings: any)
-                LayoutOrderModule = LayoutOrderModule + 1
-                local TextManager = {}
-                if self._size == 0 then
-                    self._size = 17
-                end
-                self._size += settings.customScale or 50 
-                if ModuleManager._state then
-                    Module.Size = UDim2.fromOffset(241, 93 + self._size + self._multiplier)
-                end
-                Options.Size = UDim2.fromOffset(241, self._size)
-                local TextFrame = Instance.new('Frame')
-                TextFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-                TextFrame.BackgroundTransparency = 0.1
-                TextFrame.Size = UDim2.new(0, 207, 0, settings.CustomYSize or 30) 
-                TextFrame.BorderSizePixel = 0
-                TextFrame.Name = "Text"
-                TextFrame.AutomaticSize = Enum.AutomaticSize.Y 
-                TextFrame.Parent = Options
-                TextFrame.LayoutOrder = LayoutOrderModule
-                local UICorner = Instance.new('UICorner')
-                UICorner.CornerRadius = UDim.new(0, 4)
-                UICorner.Parent = TextFrame
-                local Body = Instance.new('TextLabel')
-                Body.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Regular, Enum.FontStyle.Normal)
-                Body.TextColor3 = Color3.fromRGB(220, 220, 220)
-                if not settings.rich then
-                    Body.Text = settings.text or "Skibidi" 
-                else
-                    Body.RichText = true
-                    Body.Text = settings.richtext or "<font color='rgb(255,0,0)'>Allusive</font> user" 
-                end
-                Body.Size = UDim2.new(1, -10, 0, 0)
-                Body.Position = UDim2.new(0, 5, 0, 5)
-                Body.BackgroundTransparency = 1
-                Body.TextXAlignment = Enum.TextXAlignment.Left
-                Body.TextYAlignment = Enum.TextYAlignment.Top
-                Body.TextSize = 10
-                Body.TextWrapped = true
-                Body.AutomaticSize = Enum.AutomaticSize.Y
-                Body.Parent = TextFrame
-                TextFrame.MouseEnter:Connect(function()
-                    TweenService:Create(TextFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        BackgroundColor3 = Color3.fromRGB(42, 42, 42)
-                    }):Play()
-                end)
-                TextFrame.MouseLeave:Connect(function()
-                    TweenService:Create(TextFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-                    }):Play()
-                end)
-                function TextManager:Set(new_settings)
-                    if not new_settings.rich then
-                        Body.Text = new_settings.text or "Skibidi" 
-                    else
-                        Body.RichText = true
-                        Body.Text = new_settings.richtext or "<font color='rgb(255,0,0)'>Allusive</font> user" 
-                    end
-                end;
-                return TextManager
-            end
-            function ModuleManager:create_textbox(settings: any)
-                LayoutOrderModule = LayoutOrderModule + 1
-                local TextboxManager = {
-                    _text = ""
-                }
-                if self._size == 0 then
-                    self._size = 17
-                end
-                self._size += 44
-                if ModuleManager._state then
-                    Module.Size = UDim2.fromOffset(241, 93 + self._size + self._multiplier)
-                end
-                Options.Size = UDim2.fromOffset(241, self._size)
-                local Label = Instance.new('TextLabel')
-                Label.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                Label.TextColor3 = Color3.fromRGB(255, 255, 255)
-                Label.TextTransparency = 0.2
-                Label.Text = settings.title or "Enter text"
-                Label.Size = UDim2.new(0, 207, 0, 13)
-                Label.AnchorPoint = Vector2.new(0, 0)
-                Label.Position = UDim2.new(0, 0, 0, 0)
-                Label.BackgroundTransparency = 1
-                Label.TextXAlignment = Enum.TextXAlignment.Left
-                Label.BorderSizePixel = 0
-                Label.Parent = Options
-                Label.TextSize = 10;
-                Label.LayoutOrder = LayoutOrderModule
-                local Textbox = Instance.new('TextBox')
-                Textbox.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Regular, Enum.FontStyle.Normal)
-                Textbox.TextColor3 = Color3.fromRGB(255, 255, 255)
-                Textbox.BorderColor3 = Color3.fromRGB(0, 0, 0)
-                Textbox.PlaceholderText = settings.placeholder or "Enter text..."
-                Textbox.Text = typeof(Library._config._flags[settings.flag]) == "string" and Library._config._flags[settings.flag] or ""
-                Textbox.Name = 'Textbox'
-                Textbox.Size = UDim2.new(0, 207, 0, 15)
-                Textbox.BorderSizePixel = 0
-                Textbox.TextSize = 10
-                Textbox.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-                Textbox.BackgroundTransparency = 0.9
-                Textbox.ClearTextOnFocus = false
-                Textbox.Parent = Options
-                Textbox.LayoutOrder = LayoutOrderModule
-                local UICorner = Instance.new('UICorner')
-                UICorner.CornerRadius = UDim.new(0, 4)
-                UICorner.Parent = Textbox
-                function TextboxManager:update_text(text: string)
-                    self._text = text
-                    Library._config._flags[settings.flag] = self._text
-                    Config:save(game.GameId, Library._config)
-                    if settings.callback then
-                        settings.callback(self._text)
-                    end
-                end
-                Library:register_flag(settings.flag, 'string')
-                if Library:flag_type(settings.flag, 'string') then
-                    TextboxManager:update_text(Library._config._flags[settings.flag])
-                end
-                Textbox.FocusLost:Connect(function()
-                    if Textbox.Text ~= TextboxManager._text then
-                        TextboxManager:update_text(Textbox.Text)
-                    end
-                end)
-                if not Library:_is_internal_flag(settings.flag) then
-                    Library:register_component(settings.flag, function(value)
-                        if type(value) == "string" then
-                            TextboxManager:update_text(value)
-                        end
-                    end)
-                end
-                return TextboxManager
-            end   
-            function ModuleManager:create_checkbox(settings: any)
-                LayoutOrderModule = LayoutOrderModule + 1
-                local CheckboxManager = { _state = false }
-                if self._size == 0 then
-                    self._size = 17
-                end
-                self._size += 23
-                if ModuleManager._state then
-                    Module.Size = UDim2.fromOffset(241, 93 + self._size + self._multiplier)
-                end
-                Options.Size = UDim2.fromOffset(241, self._size)
-                local Checkbox = Instance.new("TextButton")
-                Checkbox.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Regular, Enum.FontStyle.Normal)
-                Checkbox.TextColor3 = Color3.fromRGB(0, 0, 0)
-                Checkbox.BorderColor3 = Color3.fromRGB(0, 0, 0)
-                Checkbox.Text = ""
-                Checkbox.AutoButtonColor = true
-                Checkbox.BackgroundTransparency = 1
-                Checkbox.Name = "Checkbox"
-                Checkbox.Size = UDim2.new(0, 207, 0, 15)
-                Checkbox.BorderSizePixel = 0
-                Checkbox.TextSize = 14
-                Checkbox.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-                Checkbox.Parent = Options
-                Checkbox.LayoutOrder = LayoutOrderModule
-                local TitleLabel = Instance.new("TextLabel")
-                TitleLabel.Name = "TitleLabel"
-                if SelectedLanguage == "th" then
-                    TitleLabel.FontFace = Font.new("rbxasset://fonts/families/NotoSansThai.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                    TitleLabel.TextSize = 13
-                else
-                    TitleLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                    TitleLabel.TextSize = 11
-                end
-                TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-                TitleLabel.TextTransparency = 0.2
-                TitleLabel.Text = settings.title or "Skibidi"
-                TitleLabel.Size = UDim2.new(0, 142, 0, 13)
-                TitleLabel.AnchorPoint = Vector2.new(0, 0.5)
-                TitleLabel.Position = UDim2.new(0, 0, 0.5, 0)
-                TitleLabel.BackgroundTransparency = 1
-                TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-                TitleLabel.Parent = Checkbox
-                local KeybindBox = Instance.new("Frame")
-                KeybindBox.Name = "KeybindBox"
-                KeybindBox.Size = UDim2.fromOffset(20, 20)
-                KeybindBox.Position = UDim2.new(1, -40, 0.5, 0)
-                KeybindBox.AnchorPoint = Vector2.new(1, 0.5)
-                KeybindBox.BackgroundColor3 = Color3.fromRGB(38, 38, 38)
-                KeybindBox.BorderSizePixel = 0
-                KeybindBox.Parent = Checkbox
-                KeybindBox.Visible = UserInputService.KeyboardEnabled
-                local KeybindCorner = Instance.new("UICorner")
-                KeybindCorner.CornerRadius = UDim.new(0, 6)
-                KeybindCorner.Parent = KeybindBox
-                local KBStroke = Instance.new("UIStroke")
-                KBStroke.Color = Color3.fromRGB(70, 70, 70)
-                KBStroke.Transparency = 0.5
-                KBStroke.Thickness = 1
-                KBStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-                KBStroke.Parent = KeybindBox
-                local KeybindLabel = Instance.new("TextLabel")
-                KeybindLabel.Name = "KeybindLabel"
-                KeybindLabel.Size = UDim2.new(1, 0, 1, 0)
-                KeybindLabel.BackgroundTransparency = 1
-                KeybindLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-                KeybindLabel.TextScaled = false
-                KeybindLabel.TextSize = 11
-                KeybindLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
-                KeybindLabel.Parent = KeybindBox
-                local KeybindButton = Instance.new("TextButton")
-                KeybindButton.Size = UDim2.new(1, 0, 1, 0)
-                KeybindButton.BackgroundTransparency = 1
-                KeybindButton.TextTransparency = 1
-                KeybindButton.Text = ""
-                KeybindButton.Parent = KeybindBox
-                KeybindButton.MouseEnter:Connect(function()
-                    TweenService:Create(KeybindBox, TweenInfo.new(0.15), {
-                        BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-                    }):Play()
-                    TweenService:Create(KBStroke, TweenInfo.new(0.15), {
-                        Transparency = 0.3
-                    }):Play()
-                end)
-                KeybindButton.MouseLeave:Connect(function()
-                    TweenService:Create(KeybindBox, TweenInfo.new(0.15), {
-                        BackgroundColor3 = Color3.fromRGB(38, 38, 38)
-                    }):Play()
-                    TweenService:Create(KBStroke, TweenInfo.new(0.15), {
-                        Transparency = 0.5
-                    }):Play()
-                end)
-                local keybindLabel
-                local function resize_keybind_box(text)
-                    local label_text = text or "..."
-                    local font_params = Instance.new("GetTextBoundsParams")
-                    font_params.Text = label_text
-                    font_params.Font = KeybindLabel.FontFace
-                    font_params.Size = KeybindLabel.TextSize
-                    font_params.Width = 10000
-                    local success, font_size = pcall(function()
-                        return TextService:GetTextBoundsAsync(font_params)
-                    end)
-                    local width = success and font_size.X or (#label_text * 6)
-                    KeybindBox.Size = UDim2.fromOffset(math.max(20, width + 10), 20)
-                end
-                local function update_keybind_display(key_name)
-                    local label_text = key_name or "..."
-                    KeybindLabel.Text = label_text
-                    resize_keybind_box(label_text)
-                    if keybindLabel then
-                        keybindLabel.Text = "[ " .. label_text .. " ]"
-                        if keybindLabel.Parent then
-                            keybindLabel.Parent.Visible = (label_text ~= "..." and label_text ~= "None" and label_text ~= "")
-                        end
-                    end
-                end
-                local function begin_checkbox_keybind_capture()
-                    if Library._choosing_keybind then return end
-                    if not UserInputService.KeyboardEnabled then return end
-                    Library._choosing_keybind = true
-                    local previous_keybind = Library:get_keybind_name(settings.flag)
-                    update_keybind_display(nil)
-                    local captureConn
-                    captureConn = UserInputService.InputBegan:Connect(function(keyInput, processed)
-                        if processed then return end
-                        if keyInput.UserInputType == Enum.UserInputType.Keyboard and keyInput.KeyCode == Enum.KeyCode.Escape then
-                            update_keybind_display(previous_keybind)
-                            captureConn:Disconnect()
-                            Library._choosing_keybind = false
-                            return
-                        end
-                        if keyInput.UserInputType == Enum.UserInputType.MouseButton2 or keyInput.UserInputType == Enum.UserInputType.MouseButton3 then
-                            Library:clear_keybind(settings.flag)
-                            Config:save(game.GameId, Library._config)
-                            update_keybind_display(nil)
-                            captureConn:Disconnect()
-                            Library._choosing_keybind = false
-                            return
-                        end
-                        if keyInput.UserInputType ~= Enum.UserInputType.Keyboard then return end
-                        if keyInput.KeyCode == Enum.KeyCode.Unknown then return end
-                        if keyInput.KeyCode == Enum.KeyCode.Backspace then
-                            Library:clear_keybind(settings.flag)
-                            Config:save(game.GameId, Library._config)
-                            update_keybind_display(nil)
-                            captureConn:Disconnect()
-                            Library._choosing_keybind = false
-                            return
-                        end
-                        captureConn:Disconnect()
-                        local keybind_string = Library:set_keybind(settings.flag, keyInput.KeyCode)
-                        Config:save(game.GameId, Library._config)
-                        Library._choosing_keybind = false
-                        update_keybind_display(keybind_string)
-                    end)
-                end
-                KeybindButton.MouseButton1Click:Connect(begin_checkbox_keybind_capture)
-                if not Library:get_keybind_name(settings.flag) and settings.keybind and settings.keybind ~= "Unknown" then
-                    Library:set_keybind(settings.flag, settings.keybind)
-                end
-                update_keybind_display(Library:get_keybind_name(settings.flag))
-                local Box = Instance.new("Frame")
-                Box.BorderColor3 = Color3.fromRGB(0, 0, 0)
-                Box.AnchorPoint = Vector2.new(1, 0.5)
-                Box.BackgroundColor3 = Library._config._flags[settings.flag] and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(40, 40, 40)
-                Box.Position = UDim2.new(1, 0, 0.5, 0)
-                Box.Name = "Box"
-                Box.Size = UDim2.new(0, 34, 0, 18)
-                Box.BorderSizePixel = 0
-                Box.Parent = Checkbox
-                local UICorner = Instance.new("UICorner")
-                UICorner.CornerRadius = UDim.new(1, 0)
-                UICorner.Parent = Box
-                local Dot = Instance.new("Frame")
-                Dot.Name = "Dot"
-                Dot.Size = UDim2.new(0, 14, 0, 14)
-                Dot.Position = Library._config._flags[settings.flag] and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
-                Dot.AnchorPoint = Vector2.new(0, 0.5)
-                Dot.BackgroundColor3 = Library._config._flags[settings.flag] and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(200, 200, 200)
-                Dot.BorderSizePixel = 0
-                Dot.Parent = Box
-                local DotCorner = Instance.new("UICorner")
-                DotCorner.CornerRadius = UDim.new(1, 0)
-                DotCorner.Parent = Dot
-                function CheckboxManager:change_state(state: boolean)
-                    self._state = state
-                    TweenService:Create(Box, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        BackgroundColor3 = state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(40, 40, 40)
-                    }):Play()
-                    TweenService:Create(Dot, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        Position = state and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0),
-                        BackgroundColor3 = state and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(200, 200, 200)
-                    }):Play()
-
-                    Library._config._flags[settings.flag] = self._state
-                    Config:save(game.GameId, Library._config)
-                    if settings.callback then settings.callback(self._state) end
-                end
-
-                Library:register_flag(settings.flag, 'boolean')
-                if Library:flag_type(settings.flag, "boolean") then
-                    CheckboxManager:change_state(Library._config._flags[settings.flag])
-                end
-                Checkbox.MouseButton1Click:Connect(function()
-                    CheckboxManager:change_state(not CheckboxManager._state)
-                end)
-                Checkbox.InputBegan:Connect(function(input, gameProcessed)
-                    if gameProcessed then return end
-                    if input.UserInputType ~= Enum.UserInputType.MouseButton3 then return end
-                    begin_checkbox_keybind_capture()
-                end)
-                local keyPressConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-                    if gameProcessed or Library._choosing_keybind or UserInputService:GetFocusedTextBox() then return end
-                    if input.UserInputType == Enum.UserInputType.Keyboard then
-                        if Library:keybind_matches(settings.flag, input) then
-                            CheckboxManager:change_state(not CheckboxManager._state)
-                        end
-                    end
-                end)
-                if Connections[settings.flag .. "_keypress"] then Connections[settings.flag .. "_keypress"]:Disconnect() end
-                Connections[settings.flag .. "_keypress"] = keyPressConnection
-                Library:register_component(settings.flag, function(value)
-                    CheckboxManager:change_state(value and true or false)
-                end)
-                return CheckboxManager
-            end
-            function ModuleManager:create_divider(settings: any)
-                LayoutOrderModule = LayoutOrderModule + 1;
-                if self._size == 0 then
-                    self._size = 17
-                end
-                self._size += 31
-                if ModuleManager._state then
-                    Module.Size = UDim2.fromOffset(241, 93 + self._size + self._multiplier)
-                end
-                Options.Size = UDim2.fromOffset(241, self._size)
-                local dividerHeight = 1
-                local dividerWidth = 207 
-                local OuterFrame = Instance.new('Frame')
-                OuterFrame.Size = UDim2.new(0, dividerWidth, 0, 20) 
-                OuterFrame.BackgroundTransparency = 1 
-                OuterFrame.Name = 'OuterFrame'
-                OuterFrame.Parent = Options
-                OuterFrame.LayoutOrder = LayoutOrderModule
-                if settings and settings.showtopic then
-                    local TextLabel = Instance.new('TextLabel')
-                    TextLabel.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Bold, Enum.FontStyle.Normal)
-                    TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255) 
-                    TextLabel.TextTransparency = 0
-                    TextLabel.Text = settings.title
-                    TextLabel.Size = UDim2.new(0, 153, 0, 13)
-                    TextLabel.Position = UDim2.new(0.5, 0, 0.501, 0)
-                    TextLabel.BackgroundTransparency = 1
-                    TextLabel.TextXAlignment = Enum.TextXAlignment.Center
-                    TextLabel.BorderSizePixel = 0
-                    TextLabel.AnchorPoint = Vector2.new(0.5,0.5)
-                    TextLabel.BorderColor3 = Color3.fromRGB(0, 0, 0)
-                    TextLabel.TextSize = 11
-                    TextLabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-                    TextLabel.ZIndex = 3;
-                    TextLabel.TextStrokeTransparency = 0;
-                    TextLabel.Parent = OuterFrame
-                end;
-                if not settings or settings and not settings.disableline then
-                    local Divider = Instance.new('Frame')
-                    Divider.Size = UDim2.new(1, 0, 0, dividerHeight)
-                    Divider.BackgroundColor3 = Color3.fromRGB(255, 255, 255) 
-                    Divider.BorderSizePixel = 0
-                    Divider.Name = 'Divider'
-                    Divider.Parent = OuterFrame
-                    Divider.ZIndex = 2;
-                    Divider.Position = UDim2.new(0, 0, 0.5, -dividerHeight / 2) 
-                    local Gradient = Instance.new('UIGradient')
-                    Gradient.Parent = Divider
-                    Gradient.Color = ColorSequence.new({
-                        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),  
-                        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 255, 255)), 
-                        ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255))  
-                    })
-                    Gradient.Transparency = NumberSequence.new({
-                        NumberSequenceKeypoint.new(0, 1),   
-                        NumberSequenceKeypoint.new(0.5, 0),
-                        NumberSequenceKeypoint.new(1, 1)
-                    })
-                    Gradient.Rotation = 0 
-                    local UICorner = Instance.new('UICorner')
-                    UICorner.CornerRadius = UDim.new(0, 2) 
-                    UICorner.Parent = Divider
-                end;
-                return true;
-            end
-            function ModuleManager:create_slider(settings: any)
-                LayoutOrderModule = LayoutOrderModule + 1
-                settings.minimum_value = settings.minimum_value or 0
-                settings.maximum_value = settings.maximum_value or 100
-                if settings.minimum_value > settings.maximum_value then
-                    settings.minimum_value, settings.maximum_value = settings.maximum_value, settings.minimum_value
-                end
-                settings.value = settings.value or settings.minimum_value
-                local SliderManager = {}
-                if self._size == 0 then
-                    self._size = 17
-                end
-                self._size += 30
-                if ModuleManager._state then
-                    Module.Size = UDim2.fromOffset(241, 93 + self._size + self._multiplier)
-                end
-                Options.Size = UDim2.fromOffset(241, self._size)
-                local Slider = Instance.new('TextButton')
-                Slider.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Regular, Enum.FontStyle.Normal);
-                Slider.TextSize = 14;
-                Slider.TextColor3 = Color3.fromRGB(0, 0, 0)
-                Slider.BorderColor3 = Color3.fromRGB(0, 0, 0)
-                Slider.Text = ''
-                Slider.AutoButtonColor = true
-                Slider.BackgroundTransparency = 1
-                Slider.Name = 'Slider'
-                Slider.Size = UDim2.new(0, 207, 0, 22)
-                Slider.BorderSizePixel = 0
-                Slider.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-                Slider.Parent = Options
-                Slider.LayoutOrder = LayoutOrderModule
-                local TextLabel = Instance.new('TextLabel')
-                if GG.SelectedLanguage == "th" then
-                    TextLabel.FontFace = Font.new("rbxasset://fonts/families/NotoSansThai.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                    TextLabel.TextSize = 13;
-                else
-                    TextLabel.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                    TextLabel.TextSize = 11;
-                end;
-                TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-                TextLabel.TextTransparency = 0.20000000298023224
-                TextLabel.Text = settings.title
-                TextLabel.Size = UDim2.new(0, 153, 0, 13)
-                TextLabel.Position = UDim2.new(0, 0, 0.05000000074505806, 0)
-                TextLabel.BackgroundTransparency = 1
-                TextLabel.TextXAlignment = Enum.TextXAlignment.Left
-                TextLabel.BorderSizePixel = 0
-                TextLabel.BorderColor3 = Color3.fromRGB(0, 0, 0)
-                TextLabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-                TextLabel.Parent = Slider
-                local Drag = Instance.new('Frame')
-                Drag.BorderColor3 = Color3.fromRGB(0, 0, 0)
-                Drag.AnchorPoint = Vector2.new(0.5, 1)
-                Drag.BackgroundTransparency = 0.8999999761581421
-                Drag.Position = UDim2.new(0.5, 0, 0.949999988079071, 0)
-                Drag.Name = 'Drag'
-                Drag.Size = UDim2.new(0, 207, 0, 4)
-                Drag.BorderSizePixel = 0
-                Drag.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-                Drag.Parent = Slider
-                local UICorner = Instance.new('UICorner')
-                UICorner.CornerRadius = UDim.new(1, 0)
-                UICorner.Parent = Drag
-                local Fill = Instance.new('Frame')
-                Fill.BorderColor3 = Color3.fromRGB(0, 0, 0)
-                Fill.AnchorPoint = Vector2.new(0, 0.5)
-                Fill.BackgroundTransparency = 0.5
-                Fill.Position = UDim2.new(0, 0, 0.5, 0)
-                Fill.Name = 'Fill'
-                Fill.Size = UDim2.new(0, 103, 0, 4)
-                Fill.BorderSizePixel = 0
-                Fill.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-                Fill.Parent = Drag
-                local UICorner = Instance.new('UICorner')
-                UICorner.CornerRadius = UDim.new(0, 3)
-                UICorner.Parent = Fill
-                local UIGradient = Instance.new('UIGradient')
-                UIGradient.Color = ColorSequence.new{
-                    ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 255, 255)),
-                    ColorSequenceKeypoint.new(1, Color3.fromRGB(79, 79, 79))
-                }
-                UIGradient.Parent = Fill
-                local Circle = Instance.new('Frame')
-                Circle.AnchorPoint = Vector2.new(1, 0.5)
-                Circle.Name = 'Circle'
-                Circle.Position = UDim2.new(1, 0, 0.5, 0)
-                Circle.BorderColor3 = Color3.fromRGB(0, 0, 0)
-                Circle.Size = UDim2.new(0, 6, 0, 6)
-                Circle.BorderSizePixel = 0
-                Circle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-                Circle.Parent = Fill
-                local UICorner = Instance.new('UICorner')
-                UICorner.CornerRadius = UDim.new(1, 0)
-                UICorner.Parent = Circle
-                local Value = Instance.new('TextLabel')
-                Value.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Regular, Enum.FontStyle.Normal)
-                Value.TextColor3 = Color3.fromRGB(255, 255, 255)
-                Value.TextTransparency = 0.20000000298023224
-                Value.Text = '50'
-                Value.Name = 'Value'
-                Value.Size = UDim2.new(0, 42, 0, 13)
-                Value.AnchorPoint = Vector2.new(1, 0)
-                Value.Position = UDim2.new(1, 0, 0, 0)
-                Value.BackgroundTransparency = 1
-                Value.TextXAlignment = Enum.TextXAlignment.Right
-                Value.BorderSizePixel = 0
-                Value.BorderColor3 = Color3.fromRGB(0, 0, 0)
-                Value.TextSize = 10
-                Value.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-                Value.Parent = Slider
-                function SliderManager:set_percentage(percentage: number)
-                    local rounded_number = 0
-                    if settings.round_number then
-                        rounded_number = math.floor(percentage)
-                    else
-                        rounded_number = math.floor(percentage * 10) / 10
-                    end
-                    local value_range = settings.maximum_value - settings.minimum_value
-                    percentage = value_range == 0 and 1 or (percentage - settings.minimum_value) / value_range
-                    local slider_size = math.clamp(percentage, 0.02, 1) * Drag.Size.X.Offset
-                    local number_threshold = math.clamp(rounded_number, settings.minimum_value, settings.maximum_value)
-                    Library._config._flags[settings.flag] = number_threshold
-                    Value.Text = tostring(number_threshold)
-                    TweenService:Create(Fill, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        Size = UDim2.fromOffset(slider_size, Drag.Size.Y.Offset)
-                    }):Play()
-                    if settings.callback then
-                        settings.callback(number_threshold)
-                    end
-                end
-                function SliderManager:update(input_position: any)
-                    local input_x = input_position and input_position.X or mouse.X
-                    local mouse_position = (input_x - Drag.AbsolutePosition.X) / Drag.Size.X.Offset
-                    local percentage = settings.minimum_value + (settings.maximum_value - settings.minimum_value) * mouse_position
-                    self:set_percentage(percentage)
-                end
-                function SliderManager:input(input: InputObject)
-                    SliderManager:update(input and input.Position)
-                    Connections:disconnect('slider_drag_'..settings.flag)
-                    Connections:disconnect('slider_input_'..settings.flag)
-                    Connections['slider_drag_'..settings.flag] = UserInputService.InputChanged:Connect(function(changed_input: InputObject)
-                        if changed_input.UserInputType ~= Enum.UserInputType.MouseMovement and changed_input.UserInputType ~= Enum.UserInputType.Touch then
-                            return
-                        end
-                        SliderManager:update(changed_input.Position)
-                    end)
-                    Connections['slider_input_'..settings.flag] = UserInputService.InputEnded:Connect(function(input: InputObject, process: boolean)
-                        if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
-                            return
-                        end
-                        Connections:disconnect('slider_drag_'..settings.flag)
-                        Connections:disconnect('slider_input_'..settings.flag)
-                        if not settings.ignoresaved then
-                            Config:save(game.GameId, Library._config);
-                        end;
-                    end)
-                end
-                Library:register_flag(settings.flag, 'number')
-                if Library:flag_type(settings.flag, 'number') then
-                    if not settings.ignoresaved then
-                        SliderManager:set_percentage(Library._config._flags[settings.flag]);
-                    else
-                        SliderManager:set_percentage(settings.value);
-                    end;
-                else
-                    SliderManager:set_percentage(settings.value);
-                end;
-                Slider.InputBegan:Connect(function(input: InputObject, process: boolean)
-                    if process then
-                        return
-                    end
-                    if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.UserInputType ~= Enum.UserInputType.Touch then
-                        return
-                    end
-                    SliderManager:input(input)
-                end)
-                Library:register_component(settings.flag, function(value)
-                    if type(value) == "number" then
-                        SliderManager:set_percentage(value)
-                    end
-                end)
-                return SliderManager
-            end
-            function ModuleManager:create_dropdown(settings: any)
-                if not settings.Order then
-                    LayoutOrderModule = LayoutOrderModule + 1;
-                end;
-                settings.options = settings.options or {}
-                if #settings.options == 0 then
-                    settings.options = { "None" }
-                end
-                settings.maximum_options = settings.maximum_options or #settings.options
-                local DropdownManager = {
-                    _state = false,
-                    _size = 0
-                }
-                local function option_to_text(option: any)
-                    if typeof(option) == "string" then
-                        return option
-                    end
-                    if typeof(option) == "Instance" then
-                        return option.Name
-                    end
-                    if type(option) == "table" and option.Name ~= nil then
-                        return tostring(option.Name)
-                    end
-                    return tostring(option)
-                end
-                if self._size == 0 then
-                    self._size = 17
-                end
-                self._size += 47
-                if ModuleManager._state then
-                    Module.Size = UDim2.fromOffset(241, 93 + self._size + self._multiplier)
-                end
-                Options.Size = UDim2.fromOffset(241, self._size)
-                local Dropdown = Instance.new('TextButton')
-                Dropdown.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Regular, Enum.FontStyle.Normal)
-                Dropdown.TextColor3 = Color3.fromRGB(0, 0, 0)
-                Dropdown.BorderColor3 = Color3.fromRGB(0, 0, 0)
-                Dropdown.Text = ''
-                Dropdown.AutoButtonColor = true
-                Dropdown.BackgroundTransparency = 1
-                Dropdown.Name = 'Dropdown'
-                Dropdown.Size = UDim2.new(0, 207, 0, 39)
-                Dropdown.BorderSizePixel = 0
-                Dropdown.TextSize = 14
-                Dropdown.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-                Dropdown.Parent = Options
-                if not settings.Order then
-                    Dropdown.LayoutOrder = LayoutOrderModule;
-                else
-                    Dropdown.LayoutOrder = settings.OrderValue;
-                end;
-                if settings.multi_dropdown and type(Library._config._flags[settings.flag]) ~= "table" then
-                    Library._config._flags[settings.flag] = {};
-                end;
-                local TextLabel = Instance.new('TextLabel')
-                if GG.SelectedLanguage == "th" then
-                    TextLabel.FontFace = Font.new("rbxasset://fonts/families/NotoSansThai.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                    TextLabel.TextSize = 13;
-                else
-                    TextLabel.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Medium, Enum.FontStyle.Normal);
-                    TextLabel.TextSize = 11;
-                end;
-                TextLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-                TextLabel.TextTransparency = 0.20000000298023224
-                TextLabel.Text = settings.title
-                TextLabel.Size = UDim2.new(0, 207, 0, 13)
-                TextLabel.BackgroundTransparency = 1
-                TextLabel.TextXAlignment = Enum.TextXAlignment.Left
-                TextLabel.BorderSizePixel = 0
-                TextLabel.BorderColor3 = Color3.fromRGB(0, 0, 0)
-                TextLabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-                TextLabel.Parent = Dropdown
-                local Box = Instance.new('Frame')
-                Box.ClipsDescendants = true
-                Box.BorderColor3 = Color3.fromRGB(0, 0, 0)
-                Box.AnchorPoint = Vector2.new(0.5, 0)
-                Box.BackgroundTransparency = 0.8999999761581421
-                Box.Position = UDim2.new(0.5, 0, 1.2000000476837158, 0)
-                Box.Name = 'Box'
-                Box.Size = UDim2.new(0, 207, 0, 22)
-                Box.BorderSizePixel = 0
-                Box.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-                Box.Parent = TextLabel
-                local UICorner = Instance.new('UICorner')
-                UICorner.CornerRadius = UDim.new(0, 4)
-                UICorner.Parent = Box
-                local Header = Instance.new('Frame')
-                Header.BorderColor3 = Color3.fromRGB(0, 0, 0)
-                Header.AnchorPoint = Vector2.new(0.5, 0)
-                Header.BackgroundTransparency = 1
-                Header.Position = UDim2.new(0.5, 0, 0, 0)
-                Header.Name = 'Header'
-                Header.Size = UDim2.new(0, 207, 0, 22)
-                Header.BorderSizePixel = 0
-                Header.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-                Header.Parent = Box
-                local CurrentOption = Instance.new('TextLabel')
-                CurrentOption.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Regular, Enum.FontStyle.Normal)
-                CurrentOption.TextColor3 = Color3.fromRGB(255, 255, 255)
-                CurrentOption.TextTransparency = 0.20000000298023224
-                CurrentOption.Name = 'CurrentOption'
-                CurrentOption.Size = UDim2.new(0, 161, 0, 13)
-                CurrentOption.AnchorPoint = Vector2.new(0, 0.5)
-                CurrentOption.Position = UDim2.new(0.04999988153576851, 0, 0.5, 0)
-                CurrentOption.BackgroundTransparency = 1
-                CurrentOption.TextXAlignment = Enum.TextXAlignment.Left
-                CurrentOption.BorderSizePixel = 0
-                CurrentOption.BorderColor3 = Color3.fromRGB(0, 0, 0)
-                CurrentOption.TextSize = 10
-                CurrentOption.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-                CurrentOption.Parent = Header
-                local UIGradient = Instance.new('UIGradient')
-                UIGradient.Transparency = NumberSequence.new{
-                    NumberSequenceKeypoint.new(0, 0),
-                    NumberSequenceKeypoint.new(0.704, 0),
-                    NumberSequenceKeypoint.new(0.872, 0.36250001192092896),
-                    NumberSequenceKeypoint.new(1, 1)
-                }
-                UIGradient.Parent = CurrentOption
-                local Arrow = Instance.new('ImageLabel')
-                Arrow.BorderColor3 = Color3.fromRGB(0, 0, 0)
-                Arrow.AnchorPoint = Vector2.new(0, 0.5)
-                Arrow.Image = 'rbxassetid://84232453189324'
-                Arrow.BackgroundTransparency = 1
-                Arrow.Position = UDim2.new(0.9100000262260437, 0, 0.5, 0)
-                Arrow.Name = 'Arrow'
-                Arrow.Size = UDim2.new(0, 8, 0, 8)
-                Arrow.BorderSizePixel = 0
-                Arrow.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-                Arrow.Parent = Header
-                local Options = Instance.new('ScrollingFrame')
-                Options.ScrollBarImageColor3 = Color3.fromRGB(0, 0, 0)
-                Options.Active = true
-                Options.ScrollBarImageTransparency = 1
-                Options.AutomaticCanvasSize = Enum.AutomaticSize.XY
-                Options.ScrollBarThickness = 0
-                Options.Name = 'Options'
-                Options.Size = UDim2.new(0, 207, 0, 0)
-                Options.BackgroundTransparency = 1
-                Options.Position = UDim2.new(0, 0, 1, 0)
-                Options.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-                Options.BorderColor3 = Color3.fromRGB(0, 0, 0)
-                Options.BorderSizePixel = 0
-                Options.CanvasSize = UDim2.new(0, 0, 0.5, 0)
-                Options.Parent = Box
-                local UIListLayout = Instance.new('UIListLayout')
-                UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-                UIListLayout.Parent = Options
-                local UIPadding = Instance.new('UIPadding')
-                UIPadding.PaddingTop = UDim.new(0, -1)
-                UIPadding.PaddingLeft = UDim.new(0, 10)
-                UIPadding.Parent = Options
-                local BoxLayout = Instance.new('UIListLayout')
-                BoxLayout.SortOrder = Enum.SortOrder.LayoutOrder
-                BoxLayout.Parent = Box
-                function DropdownManager:update(option: string)
-                    if settings.multi_dropdown then
-                        if type(Library._config._flags[settings.flag]) ~= "table" then
-                            Library._config._flags[settings.flag] = {};
-                        end;
-                        local selected = {}
-                        for _, saved_value in pairs(Library._config._flags[settings.flag]) do
-                            local option_text = option_to_text(saved_value)
-                            if option_text ~= "" and option_text ~= "Label" and not table.find(selected, option_text) then
-                                table.insert(selected, option_text)
-                            end
-                        end
-                        local OptionsChild = {}
-                        for _, object in Options:GetChildren() do
-                            if object.Name == "Option" then
-                                table.insert(OptionsChild, object.Text)
-                                if table.find(selected, object.Text) then
-                                    object.TextTransparency = 0.2
-                                else
-                                    object.TextTransparency = 0.6
-                                end
-                            end
-                        end
-                        for index = #selected, 1, -1 do
-                            if not table.find(OptionsChild, selected[index]) then
-                                table.remove(selected, index)
-                            end;
-                        end;
-                        CurrentOption.Text = table.concat(selected, ", ");
-                        Library._config._flags[settings.flag] = selected;
-                    else
-                        local option_text = option_to_text(option)
-                        CurrentOption.Text = option_text
-                        for _, object in Options:GetChildren() do
-                            if object.Name == "Option" then
-                                if object.Text == CurrentOption.Text then
-                                    object.TextTransparency = 0.2
-                                else
-                                    object.TextTransparency = 0.6
-                                end
-                            end
-                        end
-                        Library._config._flags[settings.flag] = option_text
-                    end
-                    Config:save(game.GameId, Library._config)
-                    if not settings.multi_dropdown and DropdownManager._state then
-                        DropdownManager:unfold_settings()
-                    end
-                    if settings.callback then
-                        if settings.multi_dropdown then
-                            settings.callback(Library._config._flags[settings.flag])
-                        else
-                            settings.callback(option)
-                        end
-                    end
-                end
-                local CurrentDropSizeState = 0;
-                function DropdownManager:unfold_settings()
-                    self._state = not self._state
-                    if self._state then
-                        ModuleManager._multiplier += self._size
-                        CurrentDropSizeState = self._size;
-                        TweenService:Create(Module, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                            Size = UDim2.fromOffset(241, 93 + ModuleManager._size + ModuleManager._multiplier)
-                        }):Play()
-                        TweenService:Create(Module.Options, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                            Size = UDim2.fromOffset(241, ModuleManager._size + ModuleManager._multiplier)
-                        }):Play()
-                        TweenService:Create(Dropdown, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                            Size = UDim2.fromOffset(207, 39 + self._size)
-                        }):Play()
-                        TweenService:Create(Box, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                            Size = UDim2.fromOffset(207, 22 + self._size)
-                        }):Play()
-                        TweenService:Create(Arrow, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                            Rotation = 180
-                        }):Play()
-                    else
-                        ModuleManager._multiplier -= self._size
-                        CurrentDropSizeState = 0;
-                        TweenService:Create(Module, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                            Size = UDim2.fromOffset(241, 93 + ModuleManager._size + ModuleManager._multiplier)
-                        }):Play()
-                        TweenService:Create(Module.Options, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                            Size = UDim2.fromOffset(241, ModuleManager._size + ModuleManager._multiplier)
-                        }):Play()
-                        TweenService:Create(Dropdown, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                            Size = UDim2.fromOffset(207, 39)
-                        }):Play()
-                        TweenService:Create(Box, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                            Size = UDim2.fromOffset(207, 22)
-                        }):Play()
-                        TweenService:Create(Arrow, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                            Rotation = 0
-                        }):Play()
-                    end
-                end
-                if #settings.options > 0 then
-                    DropdownManager._size = 3
-                    for index, value in settings.options do
-                        local Option = Instance.new('TextButton')
-                        Option.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                        Option.Active = false
-                        Option.TextTransparency = 0.6000000238418579
-                        Option.AnchorPoint = Vector2.new(0, 0.5)
-                        Option.TextSize = 10
-                        Option.Size = UDim2.new(0, 186, 0, 16)
-                        Option.TextColor3 = Color3.fromRGB(255, 255, 255)
-                        Option.BorderColor3 = Color3.fromRGB(0, 0, 0)
-                        Option.Text = option_to_text(value);
-                        Option.AutoButtonColor = true
-                        Option.Name = 'Option'
-                        Option.BackgroundTransparency = 1
-                        Option.TextXAlignment = Enum.TextXAlignment.Left
-                        Option.Selectable = false
-                        Option.Position = UDim2.new(0.04999988153576851, 0, 0.34210526943206787, 0)
-                        Option.BorderSizePixel = 0
-                        Option.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-                        Option.Parent = Options
-                        local UIGradient = Instance.new('UIGradient')
-                        UIGradient.Transparency = NumberSequence.new{
-                            NumberSequenceKeypoint.new(0, 0),
-                            NumberSequenceKeypoint.new(0.704, 0),
-                            NumberSequenceKeypoint.new(0.872, 0.36250001192092896),
-                            NumberSequenceKeypoint.new(1, 1)
-                        }
-                        UIGradient.Parent = Option
-                        Option.MouseButton1Click:Connect(function()
-                            if settings.multi_dropdown then
-                                if type(Library._config._flags[settings.flag]) ~= "table" then
-                                    Library._config._flags[settings.flag] = {};
-                                end;
-                                local option_text = option_to_text(value)
-                                if table.find(Library._config._flags[settings.flag], option_text) then
-                                    Library:remove_table_value(Library._config._flags[settings.flag], option_text)
-                                else
-                                    table.insert(Library._config._flags[settings.flag], option_text)
-                                end
-                                DropdownManager:update(option_text)
-                            else
-                                DropdownManager:update(value)
-                            end
-                        end)
-                        if index > settings.maximum_options then
-                            continue
-                        end
-                        DropdownManager._size += 16
-                        Options.Size = UDim2.fromOffset(207, DropdownManager._size)
-                    end
-                end
-                function DropdownManager:New(value)
-                    local savedOrder = Dropdown.LayoutOrder
-                    Dropdown:Destroy();
-                    value.OrderValue = savedOrder
-                    ModuleManager._multiplier -= CurrentDropSizeState
-                    return ModuleManager:create_dropdown(value)
-                end;
-                Library:register_flag(settings.flag, settings.multi_dropdown and 'table' or 'string')
-                if Library:flag_type(settings.flag, 'string') then
-                    DropdownManager:update(Library._config._flags[settings.flag])
-                elseif Library:flag_type(settings.flag, 'table') then
-                    DropdownManager:update("load")
-                else
-                    DropdownManager:update(settings.options[1])
-                end
-                Dropdown.MouseButton1Click:Connect(function()
-                    DropdownManager:unfold_settings()
-                end)
-                Library:register_component(settings.flag, function(value)
-                    if settings.multi_dropdown then
-                        if type(value) == "table" then
-                            Library._config._flags[settings.flag] = value
-                            DropdownManager:update("load")
-                        end
-                    else
-                        DropdownManager:update(value)
-                    end
-                end)
-                return DropdownManager
-            end
-            function ModuleManager:create_feature(settings)
-                local checked = false;
-                LayoutOrderModule = LayoutOrderModule + 1
-                if self._size == 0 then
-                    self._size = 17
-                end
-                self._size += 31
-                if ModuleManager._state then
-                    Module.Size = UDim2.fromOffset(241, 93 + self._size + self._multiplier);
-                end
-                Options.Size = UDim2.fromOffset(241, self._size);
-                Library._config._flags = Library._config._flags or {}
-                Library._config._keybinds = Library._config._keybinds or {}
-                local saved_feature = Library._config._flags[settings.flag]
-                if typeof(saved_feature) == "table" then
-                    checked = saved_feature.checked == true
-                    if not Library:get_keybind_name(settings.flag) and saved_feature.BIND and saved_feature.BIND ~= "Unknown" then
-                        Library:set_keybind(settings.flag, saved_feature.BIND)
-                    end
-                elseif typeof(saved_feature) == "boolean" then
-                    checked = saved_feature
-                else
-                    checked = false
-                end
-                Library._config._flags[settings.flag] = checked
-                Library:register_flag(settings.flag, 'boolean')
-                if not Library:get_keybind_name(settings.flag) and settings.keybind and settings.keybind ~= "Unknown" then
-                    Library:set_keybind(settings.flag, settings.keybind)
-                end
-                local FeatureContainer = Instance.new("Frame")
-                FeatureContainer.Size = UDim2.new(0, 207, 0, 24)
-                FeatureContainer.BackgroundTransparency = 1
-                FeatureContainer.Parent = Options
-                FeatureContainer.LayoutOrder = LayoutOrderModule
-                local UIListLayout = Instance.new("UIListLayout")
-                UIListLayout.FillDirection = Enum.FillDirection.Horizontal
-                UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-                UIListLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-                UIListLayout.Padding = UDim.new(0, 6)
-                UIListLayout.Parent = FeatureContainer
-                local FeatureButton = Instance.new("TextButton")
-                FeatureButton.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Medium, Enum.FontStyle.Normal);
-                FeatureButton.TextSize = 11;
-                FeatureButton.Size = UDim2.new(1, -96, 0, 20)
-                FeatureButton.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-                FeatureButton.TextColor3 = Color3.fromRGB(210, 210, 210)
-                FeatureButton.Text = "    " .. (settings.title or "Feature")
-                FeatureButton.AutoButtonColor = true
-                FeatureButton.TextXAlignment = Enum.TextXAlignment.Left
-                FeatureButton.TextTransparency = 0.2
-                FeatureButton.ClipsDescendants = true
-                FeatureButton.Parent = FeatureContainer
-                local RightContainer = Instance.new("Frame")
-                RightContainer.Size = UDim2.new(0, 90, 0, 24)
-                RightContainer.BackgroundTransparency = 1
-                RightContainer.Parent = FeatureContainer
-                local RightLayout = Instance.new("UIListLayout")
-                RightLayout.Padding = UDim.new(0, 6)
-                RightLayout.FillDirection = Enum.FillDirection.Horizontal
-                RightLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
-                RightLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-                RightLayout.SortOrder = Enum.SortOrder.LayoutOrder
-                RightLayout.Parent = RightContainer
-                local KeybindBox = Instance.new("TextLabel")
-                KeybindBox.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Regular, Enum.FontStyle.Normal)
-                KeybindBox.Size = UDim2.new(0, 20, 0, 20)
-                KeybindBox.BackgroundColor3 = Color3.fromRGB(38, 38, 38)
-                KeybindBox.TextColor3 = Color3.fromRGB(200, 200, 200)
-                KeybindBox.TextSize = 11
-                KeybindBox.BackgroundTransparency = 0
-                KeybindBox.LayoutOrder = 1
-                KeybindBox.Parent = RightContainer
-                KeybindBox.Visible = UserInputService.KeyboardEnabled
-                if not UserInputService.KeyboardEnabled then
-                    KeybindBox.Size = UDim2.fromOffset(0, 20)
-                end
-                local KeybindButton = Instance.new("TextButton")
-                KeybindButton.Size = UDim2.new(1, 0, 1, 0)
-                KeybindButton.BackgroundTransparency = 1
-                KeybindButton.TextTransparency = 1
-                KeybindButton.Parent = KeybindBox
-                local CheckboxCorner = Instance.new("UICorner", KeybindBox)
-                CheckboxCorner.CornerRadius = UDim.new(0, 6)
-                local UIStroke = Instance.new("UIStroke", KeybindBox)
-                UIStroke.Color = Color3.fromRGB(70, 70, 70)
-                UIStroke.Transparency = 0.5
-                UIStroke.Thickness = 1
-                UIStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
-                local keybindLabel
-                local function resize_keybind_box(text)
-                    local label_text = text or "..."
-                    local font_params = Instance.new("GetTextBoundsParams")
-                    font_params.Text = label_text
-                    font_params.Font = KeybindBox.FontFace
-                    font_params.Size = KeybindBox.TextSize
-                    font_params.Width = 10000
-                    local success, font_size = pcall(function()
-                        return TextService:GetTextBoundsAsync(font_params)
-                    end)
-                    local width = success and font_size.X or (#label_text * 6)
-                    KeybindBox.Size = UDim2.fromOffset(math.clamp(width + 10, 20, 54), 20)
-                end
-                local function update_keybind_display(key_name)
-                    local label_text = key_name or "..."
-                    KeybindBox.Text = label_text
-                    resize_keybind_box(label_text)
-                    if keybindLabel then
-                        keybindLabel.Text = "[ " .. label_text .. " ]"
-                        if keybindLabel.Parent then
-                            keybindLabel.Parent.Visible = (label_text ~= "..." and label_text ~= "None" and label_text ~= "")
-                        end
-                    end
-                end
-                update_keybind_display(Library:get_keybind_name(settings.flag))
-
-                local function begin_keybind_capture()
-                    if Library._choosing_keybind or not UserInputService.KeyboardEnabled then
-                        return
-                    end
-                    Library._choosing_keybind = true
-                    local previous_keybind = Library:get_keybind_name(settings.flag)
-                    update_keybind_display(nil)
-                    Connections:disconnect("keybind_input_" .. settings.flag)
-                    Connections["keybind_input_" .. settings.flag] = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-                        if gameProcessed then
-                            return
-                        end
-                        local key_name = nil
-                        if input.UserInputType == Enum.UserInputType.Keyboard and input.KeyCode == Enum.KeyCode.Escape then
-                            update_keybind_display(previous_keybind)
-                            Library._choosing_keybind = false
-                            Connections:disconnect("keybind_input_" .. settings.flag)
-                            return
-                        elseif input.UserInputType == Enum.UserInputType.Keyboard then
-                            if input.KeyCode == Enum.KeyCode.Unknown then
-                                return
-                            end
-                            if input.KeyCode ~= Enum.KeyCode.Backspace then
-                                key_name = Library:set_keybind(settings.flag, input.KeyCode)
-                            else
-                                Library:clear_keybind(settings.flag)
-                            end
-                        elseif input.UserInputType == Enum.UserInputType.MouseButton2 or input.UserInputType == Enum.UserInputType.MouseButton3 then
-                            Library:clear_keybind(settings.flag)
-                        else
-                            return
-                        end
-                        Config:save(game.GameId, Library._config)
-                        update_keybind_display(key_name)
-                        Library._choosing_keybind = false
-                        Connections:disconnect("keybind_input_" .. settings.flag)
-                    end)
-                end
-                if keybindLabel then
-                    keybindLabel.MouseButton1Click:Connect(begin_keybind_capture)
-                end
-                local UseF_Var = nil;
-                if not settings.disablecheck then
-                    local Checkbox = Instance.new("TextButton")
-                    Checkbox.Size = UDim2.new(0, 34, 0, 18)
-                    Checkbox.BackgroundColor3 = checked and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(40, 40, 40)
-                    Checkbox.Text = ""
-                    Checkbox.Parent = RightContainer
-                    Checkbox.LayoutOrder = 2;
-                    local CheckboxCorner = Instance.new("UICorner")
-                    CheckboxCorner.CornerRadius = UDim.new(1, 0)
-                    CheckboxCorner.Parent = Checkbox
-                    local Dot = Instance.new("Frame")
-                    Dot.Name = "Dot"
-                    Dot.Size = UDim2.new(0, 14, 0, 14)
-                    Dot.Position = checked and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0)
-                    Dot.AnchorPoint = Vector2.new(0, 0.5)
-                    Dot.BackgroundColor3 = checked and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(200, 200, 200)
-                    Dot.BorderSizePixel = 0
-                    Dot.Parent = Checkbox
-                    local DotCorner = Instance.new("UICorner")
-                    DotCorner.CornerRadius = UDim.new(1, 0)
-                    DotCorner.Parent = Dot
-                    local function setChecked(state: boolean)
-                        checked = state and true or false
-                        Library._config._flags[settings.flag] = checked
-                        Config:save(game.GameId, Library._config)
-                        TweenService:Create(Checkbox, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                            BackgroundColor3 = checked and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(40, 40, 40)
-                        }):Play()
-                        TweenService:Create(Dot, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                            Position = checked and UDim2.new(1, -16, 0.5, 0) or UDim2.new(0, 2, 0.5, 0),
-                            BackgroundColor3 = checked and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(200, 200, 200)
-                        }):Play()
-
-                        if settings.callback then
-                            settings.callback(checked)
-                        end
-                    end
-                    local function toggleState()
-                        setChecked(not checked)
-                    end
-                    UseF_Var = toggleState
-                    Checkbox.MouseButton1Click:Connect(toggleState)
-                    Library:register_component(settings.flag, function(value)
-                        setChecked(value and true or false)
-                    end)
-                else
-                    UseF_Var = function()
-                        if settings.button_callback then
-                            settings.button_callback();
-                        end
-                    end;
-                end;
-                KeybindButton.MouseButton1Click:Connect(begin_keybind_capture)
-                Connections:disconnect("keybind_press_" .. settings.flag)
-                local keyPressConnection
-                keyPressConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
-                    if gameProcessed or Library._choosing_keybind or UserInputService:GetFocusedTextBox() then return end
-                    if input.UserInputType == Enum.UserInputType.Keyboard and Library:keybind_matches(settings.flag, input) then
-                        UseF_Var();
-                    end
-                end)
-                Connections["keybind_press_" .. settings.flag] = keyPressConnection
-                FeatureButton.MouseButton1Click:Connect(function()
-                    if settings.button_callback then
-                        settings.button_callback()
-                    end
-                end)
-                FeatureButton.MouseEnter:Connect(function()
-                    TweenService:Create(FeatureButton, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        BackgroundColor3 = Color3.fromRGB(38, 38, 38)
-                    }):Play()
-                end)
-                FeatureButton.MouseLeave:Connect(function()
-                    TweenService:Create(FeatureButton, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-                    }):Play()
-                end)
-                if not settings.disablecheck and settings.callback then
-                    settings.callback(checked);
-                end;
-                return FeatureContainer
-            end                    
-            return ModuleManager
         end
-        return TabManager
-    end
-    Connections['library_visiblity'] = UserInputService.InputBegan:Connect(function(input: InputObject, process: boolean)
-        if process then return end
-        if input.KeyCode ~= (self._toggle_keybind or Enum.KeyCode.Insert) then
-            return
+
+        local function __GrabAndDisable(signal)
+            local fn
+            for _, c in getconnections(signal) do
+                if c and c.Function then
+                    fn = fn or c.Function
+                    if c.Disable then
+                        c:Disable()
+                        table.insert(__ShopDisabledConns, c)
+                    end
+                end
+            end
+            return fn
         end
-        self._ui_open = not self._ui_open
-        self:change_visiblity(self._ui_open)
-    end)
-    self._ui.Container.Handler.Minimize.MouseButton1Click:Connect(function()
-        self._ui_open = not self._ui_open
-        self:change_visiblity(self._ui_open)
-    end)
-    if UserInputService.TouchEnabled then
-        local MobileToggle = Instance.new("ImageButton")
-        MobileToggle.Name = "MobileToggle"
-        MobileToggle.Size = UDim2.new(0, 45, 0, 45)
-        MobileToggle.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
-        MobileToggle.Image = "rbxassetid://107819132007001"
-        MobileToggle.Parent = self._ui
-        Library._config._library = Library._config._library or {}
-        local savedPos = Library._config._library._mobile_toggle_pos
-        MobileToggle.Position = savedPos and UDim2.new(savedPos[1], savedPos[2], savedPos[3], savedPos[4]) or UDim2.new(0, 50, 0, 50)
-        local UICorner = Instance.new("UICorner")
-        UICorner.CornerRadius = UDim.new(0.5, 0)
-        UICorner.Parent = MobileToggle
-        local UIStroke = Instance.new("UIStroke")
-        UIStroke.Color = Color3.fromRGB(255, 255, 255)
-        UIStroke.Transparency = 0.7
-        UIStroke.Thickness = 1
-        UIStroke.Parent = MobileToggle
-        local MobileToggleScale = Instance.new("UIScale")
-        MobileToggleScale.Parent = MobileToggle
-        self._mobile_toggle_uiscale = MobileToggleScale
-        local DRAG_THRESHOLD = 6 
-        local dragging = false
-        local dragMoved = false
-        local dragStart, startPos
-        local activeInput = nil
-        local function clamp_position(pos)
-            local viewport = workspace.CurrentCamera.ViewportSize
-            local size = MobileToggle.AbsoluteSize
-            local margin = 12
-            local minX = margin
-            local maxX = viewport.X - size.X - margin
-            local minY = margin
-            local maxY = viewport.Y - size.Y - margin
-            local x = math.clamp(pos.X.Offset, minX, math.max(minX, maxX))
-            local y = math.clamp(pos.Y.Offset, minY, math.max(minY, maxY))
-            return UDim2.new(0, x, 0, y)
+
+        local function __ReDisableShop()
+            for _, c in ipairs(__ShopDisabledConns) do
+                pcall(function() if c.Disable then c:Disable() end end)
+            end
         end
-        MobileToggle.InputBegan:Connect(function(input)
-            if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and not dragging then
-                dragging = true
-                dragMoved = false
-                dragStart = input.Position
-                startPos = MobileToggle.Position
-                activeInput = input
-                if Connections['mobile_toggle_input_ended'] then Connections['mobile_toggle_input_ended']:Disconnect() end
-                Connections['mobile_toggle_input_ended'] = input.Changed:Connect(function()
-                    if input.UserInputState == Enum.UserInputState.End then
-                        dragging = false
-                        activeInput = nil
-                        if Connections['mobile_toggle_input_ended'] then
-                            Connections['mobile_toggle_input_ended']:Disconnect()
-                            Connections['mobile_toggle_input_ended'] = nil
+
+        local function __DoUnlockAll()
+            local __Categories = { Sword = true, Explosion = true }
+            for Category in pairs(__Categories) do
+                local Shop_List = __ShopController._virtualItems[Category]
+                if Shop_List then
+                    for _, Value in pairs(Shop_List) do
+                        local already = false
+                        pcall(function() already = Value.OwnsItem:Get() == true end)
+                        if not __UnlockForcedOwnedSet[Value] then
+                            __UnlockForcedOwnedSet[Value] = { type = Category, trulyOwned = already }
                         end
-                        if dragMoved then
-                            local clamped = clamp_position(MobileToggle.Position)
-                            MobileToggle.Position = clamped
-                            Library._config._library._mobile_toggle_pos = {
-                                clamped.X.Scale, clamped.X.Offset,
-                                clamped.Y.Scale, clamped.Y.Offset
-                            }
-                            Config:save(game.GameId, Library._config)
+                        if not already then
+                            pcall(function() Value.OwnsItem:Set(true) end)
+                            pcall(function() Value.Section:Set("Owned") end)
+                            pcall(function() Value.ForceHide:Set(false) end)
                         end
                     end
-                end)
-            end
-        end)
-        Connections['mobile_toggle_drag'] = UserInputService.InputChanged:Connect(function(input)
-            if not dragging then return end
-            if input.UserInputType == Enum.UserInputType.Touch and input ~= activeInput then return end
-            if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-                local delta = input.Position - dragStart
-                if delta.Magnitude >= DRAG_THRESHOLD then
-                    dragMoved = true
-                end
-                if dragMoved then
-                    local next_pos = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-                    MobileToggle.Position = clamp_position(next_pos)
                 end
             end
-        end)
-        MobileToggle.MouseButton1Click:Connect(function()
-            if dragMoved then
+        end
+
+        if typeof(__Inventory_Shared.FindItems) == "function" then
+            local __RealFindItems
+            __RealFindItems = hookfunction(__Inventory_Shared.FindItems, function(self, caller, inventoryType, itemName, filter)
+                if not getgenv().__RoniUnlockEnabled then
+                    return __RealFindItems(self, caller, inventoryType, itemName, filter)
+                end
+                local ok, real = pcall(__RealFindItems, self, caller, inventoryType, itemName, filter)
+                if ok and type(real) == "table" and #real > 0 then return real end
+                if not __UNLOCK_TYPES[inventoryType] then
+                    if ok then return real end
+                    return {}
+                end
+                if itemName ~= nil then return { itemName } end
+                return {}
+            end)
+        end
+
+        local function __FindVirtualItem(itemType, name)
+            local list = __ShopController._virtualItems[itemType]
+            if not list then return nil end
+            for key, item in pairs(list) do
+                if item and (item.Name == name or key == name) then return item end
+            end
+            return nil
+        end
+
+        local function __PinItem(item)
+            if not item then return end
+            if __UnlockOriginalFields[item] then
+                item.Name_ = __Statable.State("#\0|" .. (item.Name or ""))
+                item.LayoutOrder = __Statable.State(-1000000000)
                 return
             end
-            self._ui_open = not self._ui_open
-            self:change_visiblity(self._ui_open)
+            __UnlockOriginalFields[item] = { Name_ = item.Name_, LayoutOrder = item.LayoutOrder }
+            item.Name_ = __Statable.State("#\0|" .. (item.Name or ""))
+            item.LayoutOrder = __Statable.State(-1000000000)
+        end
+
+        local function __UnpinItem(item)
+            local orig = __UnlockOriginalFields[item]
+            if not orig then return end
+            item.Name_ = orig.Name_
+            item.LayoutOrder = orig.LayoutOrder
+            __UnlockOriginalFields[item] = nil
+        end
+
+        local function __ReSort(itemType)
+            local page = __ShopController._inventoryPages[itemType]
+            if page and page.Scroll then pcall(function() page.Scroll.Sort() end) end
+        end
+
+        local function __ApplyFakeFavorite(itemType, name, state, skipSave)
+            __FakeFavorites[itemType] = __FakeFavorites[itemType] or {}
+            __FakeFavorites[itemType][name] = state or nil
+            local favState = __InventoryController:GetFavoriteState(itemType, name)
+            if favState then favState:Set(state and true or false) end
+            local item = __FindVirtualItem(itemType, name)
+            if item then
+                if state then __PinItem(item) else __UnpinItem(item) end
+            end
+            __ReSort(itemType)
+            if not skipSave then __UnlockSavePersist() end
+        end
+
+        local __FavOriginal = __GrabAndDisable(__FavoriteButton.Activated)
+        __FavoriteButton.Activated:Connect(function(...)
+            if not getgenv().__RoniUnlockEnabled then
+                if __FavOriginal then return __FavOriginal(...) end
+                return
+            end
+            local sel = __ShopController._selectedItem
+            if not sel or not __FAVORITE_TYPES[sel.type] then return end
+            local current = __FakeFavorites[sel.type] and __FakeFavorites[sel.type][sel.name]
+            __ApplyFakeFavorite(sel.type, sel.name, not current)
+            local on = __FakeFavorites[sel.type] and __FakeFavorites[sel.type][sel.name] or false
+            for k, v in pairs(__FAV_IMG[on]) do __FavoriteButton[k] = v end
         end)
-    end
-    return self
+
+        local __DeleteItemPromptController = require(__ReplicatedStorage.Controllers.DeleteItemPromptController)
+
+        local function __RemoveVirtualItem(itemType, name)
+            local list = __ShopController._virtualItems[itemType]
+            if not list then return end
+            for key, item in pairs(list) do
+                if item and (item.Name == name or key == name) then
+                    local page = __ShopController._inventoryPages[itemType]
+                    if page and page.Scroll then
+                        pcall(function() page.Scroll.RemoveInstance("Owned", item) end)
+                        pcall(function() page.Scroll.RemoveInstance("Unowned", item) end)
+                    end
+                    if item.Trove then pcall(function() item.Trove:Destroy() end) end
+                    list[key] = nil
+                end
+            end
+        end
+
+        local function __DoFakeDelete(itemType, name)
+            if itemType == "Sword" and getgenv().__RoniSwordName == name then
+                getgenv().__RoniSwordName = "Base Sword"
+                local Base = __Swords:GetSword("Base Sword")
+                if Base then
+                    __BypassSwordOwnership()
+                    pcall(function() __Swords:EquipSwordTo(__LocalPlayer.Character, Base.Name) end)
+                end
+            end
+            __UnlockSavePersist()
+            __RemoveVirtualItem(itemType, name)
+            __ShopController._selectedItem = nil
+        end
+
+        local __DelOriginal = __GrabAndDisable(__DeleteButton.Activated)
+        __DeleteButton.Activated:Connect(function(...)
+            if not getgenv().__RoniUnlockEnabled then
+                if __DelOriginal then return __DelOriginal(...) end
+                return
+            end
+            local sel = __ShopController._selectedItem
+            if not sel or (sel.type ~= "Sword" and sel.type ~= "Explosion") then return end
+            local Type, Name = sel.type, sel.name
+            local info = __ItemInfo[Type] and __ItemInfo[Type][Name]
+            local displayName = (info and info.DisplayName) or Name
+            __DeleteItemPromptController:PromptConfirmation({
+                PromptType = "Single",
+                Description = string.format("Are you sure you want to delete x1 %s? This cannot be undone.", displayName),
+            }, function(confirmed) if confirmed then __DoFakeDelete(Type, Name) end end)
+        end)
+
+        __ShopController.itemSelected:Connect(function()
+            task.defer(function()
+                local sel = __ShopController._selectedItem
+                if getgenv().__RoniUnlockEnabled and sel and (sel.type == "Sword" or sel.type == "Explosion") then
+                    __DeleteButton.Visible = true
+                end
+
+                if sel and __FAVORITE_TYPES[sel.type] then
+                    local on = __FakeFavorites[sel.type] and __FakeFavorites[sel.type][sel.name] or false
+                    for k, v in pairs(__FAV_IMG[on]) do __FavoriteButton[k] = v end
+                end
+
+                if getgenv().__RoniUnlockEnabled and sel and (sel.type == "Sword" or sel.type == "Explosion") then
+                    __BuyButton.Visible = true
+                    if sel.type == "Sword" and getgenv().__RoniSwordName == sel.name then
+                        __BuyButton.PriceTag.TextLabel.Text = "Equipped"
+                    elseif sel.type == "Explosion" and __UnlockSelectedExplosion == sel.name then
+                        __BuyButton.PriceTag.TextLabel.Text = "Equipped"
+                    else
+                        __BuyButton.PriceTag.TextLabel.Text = "Equip"
+                    end
+                end
+            end)
+        end)
+        local __OriginalBuyHandlers = {}
+        for _, c in getconnections(__BuyButton.Activated) do
+            if c and c.Function then table.insert(__OriginalBuyHandlers, c.Function) end
+        end
+        __GrabAndDisable(__BuyButton.Activated)
+        local __SwordFunction = nil
+        for _, c in getconnections(__ReplicatedStorage.Remotes.FireSwordInfo.OnClientEvent) do
+            if c and c.Function then __SwordFunction = c.Function; break end
+        end
+        local __ExplosionModule = require(__ReplicatedStorage.Controllers.VFXController)
+        local __OriginalPlayExplosion = __ExplosionModule.PlayExplosion
+        local __PlayParry = nil
+        for _, c in getconnections(__ReplicatedStorage.Remotes.ParrySuccessAll.OnClientEvent) do
+            if c and c.Function then __PlayParry = c.Function end
+        end
+        if __PlayParry then
+            for _, c in getconnections(__ReplicatedStorage.Remotes.ParrySuccessAll.OnClientEvent) do
+                if c and c.Function then c:Disable() end
+            end
+            __ReplicatedStorage.Remotes.ParrySuccessAll.OnClientEvent:Connect(function(...)
+                local Args = { ... }
+                local Sword = __Swords:GetSword(getgenv().__RoniSwordName)
+                local hrp = __LocalPlayer.Character and __LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if Sword and (Args[4] == hrp or tostring(Args[4]) == __LocalPlayer.Name) then
+                    Args[1] = Sword.SlashName
+                    Args[3] = Sword.Name
+                end
+                if __LocalPlayer.Character and __LocalPlayer.Character:FindFirstChild('HumanoidRootPart') == Args[2] then
+                    __ParryTimeNow = tick()
+                    __ParryTimeViewer = (__ParryTimeNow - __ParryLastTime)
+                    __ParryLastTime = __ParryTimeNow
+                    __LastAckTick = __ParryTimeNow
+                    __PendingParry = nil
+                end
+                return __PlayParry(unpack(Args))
+            end)
+        end
+        __BuyButton.Activated:Connect(function(...)
+            local Sell = __ShopController._selectedItem
+            if not Sell then return end
+            local Type, Name = Sell.type, Sell.name
+            if not getgenv().__RoniUnlockEnabled or (Type ~= "Sword" and Type ~= "Explosion") then
+                for _, handler in ipairs(__OriginalBuyHandlers) do pcall(handler, ...) end
+                return
+            end
+            if Type == "Sword" and getgenv().__RoniSwordName == Name then
+                __BuyButton.PriceTag.TextLabel.Text = "Equipped"
+                return
+            end
+            if Type == "Explosion" and __UnlockSelectedExplosion == Name then
+                __BuyButton.PriceTag.TextLabel.Text = "Equipped"
+                return
+            end
+            if Type == "Sword" then
+                __BuyButton.PriceTag.TextLabel.Text = "Equipped"
+                __BypassSwordOwnership()
+                local Sword_Model = __Swords:GetSword(Name)
+                getgenv().__RoniSwordName = Sword_Model.Name
+                pcall(function() __Swords:EquipSwordTo(__LocalPlayer.Character, Sword_Model.Name) end)
+                if __SwordFunction then pcall(__SwordFunction, Sword_Model.Name) end
+                __UnlockSavePersist()
+            elseif Type == "Explosion" then
+                __BuyButton.PriceTag.TextLabel.Text = "Equipped"
+                __UnlockSelectedExplosion = Name
+                __ExplosionModule.PlayExplosion = function(self, name, position, ball, character, attributionCharacter, kill)
+                    if getgenv().__RoniUnlockEnabled and __UnlockSelectedExplosion and __UnlockSelectedExplosion ~= "" then
+                        if kill and attributionCharacter == __LocalPlayer.Character then name = __UnlockSelectedExplosion end
+                    end
+                    return __OriginalPlayExplosion(self, name, position, ball, character, attributionCharacter, kill)
+                end
+            end
+        end)
+        __LocalPlayer.CharacterAppearanceLoaded:Connect(function()
+            if not getgenv().__RoniUnlockEnabled or not getgenv().__RoniSwordName then return end
+            __BypassSwordOwnership()
+            pcall(function() __Swords:EquipSwordTo(__LocalPlayer.Character, getgenv().__RoniSwordName) end)
+            if __SwordFunction then pcall(__SwordFunction, getgenv().__RoniSwordName) end
+        end)
+        local function __Hex(color)
+            return string.format("#%02X%02X%02X", math.floor(color.R*255+0.5), math.floor(color.G*255+0.5), math.floor(color.B*255+0.5))
+        end
+        local function __BuildTitleText()
+            local sel = _G.__RoniTitleState.Selected
+            if not sel then return "" end
+            return string.format('<font color="%s">%s</font>', __Hex(sel.Color), sel.Text)
+        end
+        local __TITLE_PATHS = {
+            { "Customize", "Profile", "Playerprofile", "Details", "Title" },
+            { "Customize", "PlayerCard", "Title" },
+        }
+        local function __IsOwnProfileCard(pc)
+            if not pc then return false end
+            for _, desc in ipairs(pc:GetDescendants()) do
+                if (desc:IsA("TextLabel") or desc:IsA("TextButton") or desc:IsA("TextBox")) then
+                    local txt = desc.Text
+                    if txt and (txt == __LocalPlayer.Name or txt == __LocalPlayer.DisplayName or string.find(txt, __LocalPlayer.DisplayName, 1, true)) then return true end
+                end
+            end
+            return false
+        end
+        local function __GetTitleLabels()
+            local out = {}
+            local pc = __PlayerGui:FindFirstChild("ProfileCard")
+            if not pc or not __IsOwnProfileCard(pc) then return out end
+            for _, path in ipairs(__TITLE_PATHS) do
+                local node = pc
+                for _, n in ipairs(path) do if node then node = node:FindFirstChild(n) end end
+                if node and (node:IsA("TextLabel") or node:IsA("TextButton") or node:IsA("TextBox")) then table.insert(out, node) end
+            end
+            return out
+        end
+        local function __ForceTitleLabel(lbl)
+            local want = __BuildTitleText()
+            pcall(function()
+                lbl.RichText = true; lbl.Visible = true; lbl.TextTransparency = 0
+                if lbl.TextSize == 0 then lbl.TextSize = 18 end
+                if lbl.TextColor3 == Color3.new(0,0,0) then lbl.TextColor3 = Color3.new(1,1,1) end
+                if lbl.Text ~= want then lbl.Text = want end
+            end)
+        end
+        local function __UpdateProfileCardTitle()
+            if not getgenv().__RoniUnlockEnabled then return end
+            for _, lbl in ipairs(__GetTitleLabels()) do __ForceTitleLabel(lbl) end
+        end
+        __PlayerGui.DescendantAdded:Connect(function(d)
+            if not d then return end
+            if d.Name == "Title" and (d:IsA("TextLabel") or d:IsA("TextButton") or d:IsA("TextBox")) then
+                if d:FindFirstAncestor("ProfileCard") then
+                    task.delay(0.05, __UpdateProfileCardTitle)
+                    task.delay(0.3, __UpdateProfileCardTitle)
+                    task.delay(1.0, __UpdateProfileCardTitle)
+                end
+            end
+        end)
+        local function __RunProfileCardTitleLoop(pc)
+            task.spawn(function()
+                while pc.Parent do pcall(__UpdateProfileCardTitle); task.wait(0.1) end
+            end)
+        end
+        local existingCard = __PlayerGui:FindFirstChild("ProfileCard")
+        if existingCard then __RunProfileCardTitleLoop(existingCard) end
+        __PlayerGui.ChildAdded:Connect(function(child)
+            if child.Name == "ProfileCard" then __RunProfileCardTitleLoop(child) end
+        end)
+
+        task.spawn(function()
+            local ok, Title_Data = pcall(function() return require(__ReplicatedStorage.Shared:WaitForChild("TitleData")) end)
+            if not ok or not Title_Data then return end
+            local List = __PlayerGui:WaitForChild("Settings"):WaitForChild("Frame"):WaitForChild("Frame"):WaitForChild("SettingTitles"):WaitForChild("TitleList")
+            local needed = #Title_Data + 1
+            for _ = 1, 60 do
+                local count = 0
+                for _, c in ipairs(List:GetChildren()) do if c:IsA("ImageButton") then count = count + 1 end end
+                if count >= needed then break end
+                task.wait(0.25)
+            end
+            local UI_Rows = {}
+            for _, Row in ipairs(List:GetChildren()) do if Row:IsA("ImageButton") then table.insert(UI_Rows, Row) end end
+            table.sort(UI_Rows, function(a, b) return a.LayoutOrder < b.LayoutOrder end)
+            for Index, Data in ipairs(Title_Data) do
+                local Row = UI_Rows[Index + 1]
+                if not Row then break end
+                local Label = Row:FindFirstChild("TextLabel")
+                if Label and Data.Tag then Label.Text = Data.Tag.Text; Label.TextColor3 = Data.Tag.Color end
+                Row.Name = Data.Name or Row.Name
+                Row.Visible = true
+            end
+            local Selected_Row = nil
+            for i, Row in ipairs(UI_Rows) do
+                local rowIndex = i
+                Row.Activated:Connect(function()
+                    Selected_Row = Row
+                    local Data = Title_Data[rowIndex - 1]
+                    if rowIndex == 1 or not Data then
+                        _G.__RoniTitleState.Selected = nil
+                    else
+                        _G.__RoniTitleState.Selected = { Text = Data.Tag.Text, Color = Data.Tag.Color }
+                    end
+                    for _, Other in ipairs(UI_Rows) do
+                        local Highlighted = Other:FindFirstChild("Selected")
+                        if Highlighted then Highlighted.Visible = (Other == Selected_Row) end
+                    end
+                    __UpdateProfileCardTitle()
+                end)
+            end
+        end)
+
+        task.delay(0.5, __UpdateProfileCardTitle)
+        pcall(function()
+            if __TextChatService.ChatVersion == Enum.ChatVersion.TextChatService then
+                __TextChatService.OnIncomingMessage = function(message)
+                    local props = Instance.new("TextChatMessageProperties")
+                    if getgenv().__RoniUnlockEnabled and message.TextSource and message.TextSource.UserId == __LocalPlayer.UserId then
+                        local sel = _G.__RoniTitleState.Selected
+                        if sel then
+                            props.PrefixText = string.format('<font color="%s">[%s]</font> <font color="%s">%s</font>', __Hex(sel.Color), sel.Text, __Hex(sel.Color), __LocalPlayer.DisplayName)
+                        end
+                    end
+                    return props
+                end
+            end
+        end)
+        getgenv().__RoniUnlock_ReDisableShop = __ReDisableShop
+        getgenv().__RoniUnlock_DoUnlockAll = __DoUnlockAll
+        getgenv().__RoniUnlock_ReapplyFavorites = function()
+            task.spawn(function()
+                for _ = 1, 10 do
+                    task.wait(0.1)
+                    if not getgenv().__RoniUnlockEnabled then return end
+                    for itemType, names in pairs(__FakeFavorites) do
+                        for name, on in pairs(names) do
+                            if on then __ApplyFakeFavorite(itemType, name, true, true) end
+                        end
+                    end
+                end
+            end)
+        end
+        if getgenv().__RoniUnlockEnabled then
+            __DoUnlockAll()
+            for itemType, names in pairs(__FakeFavorites) do
+                for name, on in pairs(names) do
+                    if on then __ApplyFakeFavorite(itemType, name, true, true) end
+                end
+            end
+        end
+    end)
+    __TabUnlocker:create_toggle('unlock_all', {
+        title = 'unlock all',
+        default = false,
+        callback = function(val)
+            getgenv().__RoniUnlockEnabled = val
+            if val then
+                if getgenv().__RoniUnlock_ReDisableShop then pcall(getgenv().__RoniUnlock_ReDisableShop) end
+                if getgenv().__RoniUnlock_DoUnlockAll then pcall(getgenv().__RoniUnlock_DoUnlockAll) end
+                if getgenv().__RoniUnlock_ReapplyFavorites then pcall(getgenv().__RoniUnlock_ReapplyFavorites) end
+            end
+        end
+    })
 end
-return Library
+__Interface:select_tab(1)

@@ -1,4 +1,10 @@
- 
+if not LPH_OBFUSCATED then
+    LPH_ENCFUNC = function(callback) return callback end
+    LPH_NO_VIRTUALIZE = function(...) return ... end
+    LPH_NO_UPVALUES = function(...) return ... end
+    LPH_JIT_MAX = function(...) return ... end
+    LPH_JIT = function(...) return ... end
+end
 
 local _new_instance = Instance.new
 local _new_tween_info = TweenInfo.new
@@ -88,18 +94,18 @@ local mouse = setmetatable({}, {
     end
 })
 for _, gui in pairs((gethui and gethui():GetChildren()) or CoreGui:GetChildren()) do
-    if gui:FindFirstChild('PrivotSignature') or gui:FindFirstChild('RoniSignature') then
+    if gui:FindFirstChild('pivotSignature') or gui:FindFirstChild('RoniSignature') then
         Debris:AddItem(gui, 0)
     end
 end
-local old_Allusive = CoreGui:FindFirstChild('privot') or CoreGui:FindFirstChild('roni')
+local old_Allusive = CoreGui:FindFirstChild('pivot') or CoreGui:FindFirstChild('roni')
 if old_Allusive then
     Debris:AddItem(old_Allusive, 0)
 end
-if not isfolder("privot") then
-    pcall(makefolder, "privot")
+if not isfolder("pivot") then
+    pcall(makefolder, "pivot")
 end
-local ConfigFolder = "privot"
+local ConfigFolder = "pivot"
 if not isfolder(ConfigFolder) then
     pcall(makefolder, ConfigFolder)
 end
@@ -507,9 +513,9 @@ local function deep_copy_serialize(value: any, seen: any?, depth: number?)
     end
     local value_type = typeof(value)
     if value_type == "Color3" then
-        return { __privot_type = "Color3", __roni_type = "Color3", values = { value.R, value.G, value.B } }
+        return { __pivot_type = "Color3", __roni_type = "Color3", values = { value.R, value.G, value.B } }
     elseif value_type == "Vector2" then
-        return { __privot_type = "Vector2", __roni_type = "Vector2", values = { value.X, value.Y } }
+        return { __pivot_type = "Vector2", __roni_type = "Vector2", values = { value.X, value.Y } }
     elseif value_type ~= "table" then
         if value_type == "number" and (value ~= value or value == math.huge or value == -math.huge) then
             error("config numbers must be finite")
@@ -548,9 +554,9 @@ local function deep_copy_deserialize(value: any, depth: number?)
         return value
     end
     local tagged_values = value.values
-    if (value.__privot_type == "Color3" or value.__roni_type == "Color3") and type(tagged_values) == "table" and type(tagged_values[1]) == "number" and type(tagged_values[2]) == "number" and type(tagged_values[3]) == "number" then
+    if (value.__pivot_type == "Color3" or value.__roni_type == "Color3") and type(tagged_values) == "table" and type(tagged_values[1]) == "number" and type(tagged_values[2]) == "number" and type(tagged_values[3]) == "number" then
         return Color3.new(tagged_values[1], tagged_values[2], tagged_values[3])
-    elseif (value.__privot_type == "Vector2" or value.__roni_type == "Vector2") and type(tagged_values) == "table" and type(tagged_values[1]) == "number" and type(tagged_values[2]) == "number" then
+    elseif (value.__pivot_type == "Vector2" or value.__roni_type == "Vector2") and type(tagged_values) == "table" and type(tagged_values[1]) == "number" and type(tagged_values[2]) == "number" then
         return Vector2.new(tagged_values[1], tagged_values[2])
     end
     local copy = {}
@@ -582,12 +588,12 @@ function Config:_persistable_copy(config: any)
     copy._keybinds = type(copy._keybinds) == "table" and copy._keybinds or {}
     copy._library = type(copy._library) == "table" and copy._library or {}
     for flag in pairs(copy._flags) do
-        if type(flag) == "string" and (flag:sub(1, 11) == "privot_cfg_" or flag:sub(1, 9) == "roni_cfg_" or self._nonpersistent_flags[flag] == true) then
+        if type(flag) == "string" and (flag:sub(1, 11) == "pivot_cfg_" or flag:sub(1, 9) == "roni_cfg_" or self._nonpersistent_flags[flag] == true) then
             copy._flags[flag] = nil
         end
     end
     for flag in pairs(copy._keybinds) do
-        if type(flag) == "string" and (flag:sub(1, 11) == "privot_cfg_" or flag:sub(1, 9) == "roni_cfg_") then
+        if type(flag) == "string" and (flag:sub(1, 11) == "pivot_cfg_" or flag:sub(1, 9) == "roni_cfg_") then
             copy._keybinds[flag] = nil
         end
     end
@@ -816,6 +822,12 @@ function Library.new()
     self:create_ui()
     return self
 end
+function Library:create_tab(...)
+    if not Library._current then
+        Library.new()
+    end
+    return Library._current:create_tab(...)
+end
 function Library:close_all_dropdowns(except)
     for _, dropdown in ipairs(self._active_dropdowns or {}) do
         if dropdown ~= except and dropdown._state and not dropdown._destroyed and dropdown.unfold_settings then
@@ -866,6 +878,13 @@ local NOTIFICATION_ACCENTS = {
     info    = Color3.fromRGB(255, 255, 255), 
 }
 function Library.SendNotification(settings)
+    if type(settings) == "string" then
+        settings = { title = "Notification", text = settings, duration = 3 }
+    end
+    settings = settings or {}
+    settings.title = settings.title or settings.Title or "Notification"
+    settings.text = settings.text or settings.Text or settings.content or settings.Content or ""
+    settings.duration = tonumber(settings.duration or settings.Duration or settings.time or settings.Time) or 3
     local dismissed = false
     local Notification = Instance.new("TextButton")
     Notification.Size = UDim2.new(1, 0, 0, 0)
@@ -979,6 +998,22 @@ function Library.SendNotification(settings)
         dismiss()
     end)
 end
+function Library:notify(arg1, arg2, arg3)
+    local s = {}
+    if type(arg1) == "string" then
+        s.title = arg1
+        s.text = tostring(arg2 or "")
+        s.duration = tonumber(arg3) or 3
+    elseif type(arg1) == "table" then
+        s.title = arg1.title or arg1.Title or "Notification"
+        s.text = arg1.text or arg1.Text or arg1.content or arg1.Content or ""
+        s.duration = arg1.duration or arg1.Duration or arg1.time or arg1.Time or 3
+        s.type = arg1.type or arg1.Type or "info"
+    end
+    return Library.SendNotification(s)
+end
+Library.Notify = Library.notify
+Library.send_notification = Library.notify
 function Library:get_screen_scale()
     local viewport_size = workspace.CurrentCamera.ViewportSize
     if self._ui and self._ui.AbsoluteSize.Y > 0 then
@@ -1080,7 +1115,7 @@ local function clone_config_value(value: any)
 end
 
 function Library:_is_internal_flag(flag: any)
-    return type(flag) == "string" and (self._internal_flags[flag] == true or flag:sub(1, 11) == "privot_cfg_" or flag:sub(1, 9) == "roni_cfg_")
+    return type(flag) == "string" and (self._internal_flags[flag] == true or flag:sub(1, 11) == "pivot_cfg_" or flag:sub(1, 9) == "roni_cfg_")
 end
 
 function Library:register_flag(flag: any, expected_type: any, metadata: any?)
@@ -1445,7 +1480,7 @@ function Library:_notify_keybind(flag: any)
     for _, listener in ipairs(self._keybind_listeners[flag] or {}) do
         local success, listener_error = pcall(listener, key_name)
         if not success then
-            warn("[privot] keybind listener failed:", listener_error)
+            warn("[pivot] keybind listener failed:", listener_error)
         end
     end
     self:update_keybind_entry(flag)
@@ -1765,7 +1800,7 @@ function Library:_write_named_configs(data: any)
         writefile(self:_named_configs_path(), encoded)
     end)
     if not write_ok then
-        warn('[privot] failed to write named configs', write_error)
+        warn('[pivot] failed to write named configs', write_error)
         return false, tostring(write_error)
     end
     return true, nil
@@ -2111,11 +2146,11 @@ function Library:unregister_keybind_entry(flag: any)
     lib:update_keybind_list()
 end
 function Library:create_ui()
-    local old_Allusive = CoreGui:FindFirstChild('privot') or CoreGui:FindFirstChild('roni')
+    local old_Allusive = CoreGui:FindFirstChild('pivot') or CoreGui:FindFirstChild('roni')
     if old_Allusive then
         Debris:AddItem(old_Allusive, 0)
     end
-    local old_toggle = CoreGui:FindFirstChild('_privot_toggle')
+    local old_toggle = CoreGui:FindFirstChild('_pivot_toggle')
     if old_toggle then
         Debris:AddItem(old_toggle, 0)
     end
@@ -2125,7 +2160,7 @@ function Library:create_ui()
     Allusive.Name = Util:random_string()
     
     local signature = Instance.new('StringValue')
-    signature.Name = 'PrivotSignature'
+    signature.Name = 'pivotSignature'
     signature.Parent = Allusive
 
     Allusive.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
@@ -2200,7 +2235,7 @@ function Library:create_ui()
     ClientName.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Bold, Enum.FontStyle.Normal)
     ClientName.TextColor3 = Color3.fromRGB(255, 255, 255)
     ClientName.TextTransparency = 0.15
-    ClientName.Text = 'PRIVOT'
+    ClientName.Text = 'pivot'
     ClientName.Name = 'ClientName'
     ClientName.Size = UDim2.new(0, 70, 0, 16)
     ClientName.AnchorPoint = Vector2.new(0, 0.5)
@@ -2575,16 +2610,21 @@ function Library:create_ui()
         self._acrylic_blur = AcrylicBlur.new(Container)
         self:create_configs_tab()
     end
+    task.delay(0.5, function()
+        if not self._ui_loaded then
+            self:load()
+        end
+    end)
     function self:create_configs_tab()
         local CFG_ICON = 'rbxassetid://86490552961317'
-        local NameFlag = 'privot_cfg_name'
-        local CodeFlag = 'privot_cfg_code'
-        local ListFlag = 'privot_cfg_list'
+        local NameFlag = 'pivot_cfg_name'
+        local CodeFlag = 'pivot_cfg_code'
+        local ListFlag = 'pivot_cfg_list'
         for _, flag in ipairs({
             NameFlag, CodeFlag, ListFlag,
-            'privot_cfg_module', 'privot_cfg_ui_settings',
-            'privot_cfg_save', 'privot_cfg_load', 'privot_cfg_delete',
-            'privot_cfg_export', 'privot_cfg_import',
+            'pivot_cfg_module', 'pivot_cfg_ui_settings',
+            'pivot_cfg_save', 'pivot_cfg_load', 'pivot_cfg_delete',
+            'pivot_cfg_export', 'pivot_cfg_import',
             'roni_cfg_name', 'roni_cfg_code', 'roni_cfg_list',
             'roni_cfg_module', 'roni_cfg_ui_settings',
             'roni_cfg_save', 'roni_cfg_load', 'roni_cfg_delete',
@@ -2605,7 +2645,7 @@ function Library:create_ui()
         local Module = ConfigsTab:create_module({
             title = 'Config Manager',
             description = 'Save, load and share your configs.',
-            flag = 'privot_cfg_module',
+            flag = 'pivot_cfg_module',
             rich = false,
             persist = false,
             export = false
@@ -2619,7 +2659,7 @@ function Library:create_ui()
         })
         Module:create_feature({
             title = 'Save Config',
-            flag = 'privot_cfg_save',
+            flag = 'pivot_cfg_save',
             disablecheck = true,
             button_callback = function()
                 local name = self._config._flags[NameFlag] or ""
@@ -2659,7 +2699,7 @@ function Library:create_ui()
         })
         Module:create_feature({
             title = 'Load',
-            flag = 'privot_cfg_load',
+            flag = 'pivot_cfg_load',
             disablecheck = true,
             button_callback = function()
                 local name = self._config._flags[ListFlag]
@@ -2682,7 +2722,7 @@ function Library:create_ui()
         })
         Module:create_feature({
             title = 'Delete',
-            flag = 'privot_cfg_delete',
+            flag = 'pivot_cfg_delete',
             disablecheck = true,
             button_callback = function()
                 local name = self._config._flags[ListFlag]
@@ -2722,7 +2762,7 @@ function Library:create_ui()
         })
         Module:create_feature({
             title = 'Export Code',
-            flag = 'privot_cfg_export',
+            flag = 'pivot_cfg_export',
             disablecheck = true,
             button_callback = function()
                 local encoded, code = pcall(function()
@@ -2750,7 +2790,7 @@ function Library:create_ui()
         })
         Module:create_feature({
             title = 'Import Code',
-            flag = 'privot_cfg_import',
+            flag = 'pivot_cfg_import',
             disablecheck = true,
             button_callback = function()
                 local code = self._config._flags[CodeFlag] or ""
@@ -2914,8 +2954,34 @@ function Library:create_ui()
             end
         end)
     end
+    local TAB_ICON_ALIASES = {
+        info = 'rbxassetid://10723415903',
+        swords = 'rbxassetid://10734975486',
+        sword = 'rbxassetid://10734975486',
+        coins = 'rbxassetid://10709791437',
+        coin = 'rbxassetid://10709791437',
+        eye = 'rbxassetid://10723415205',
+        palette = 'rbxassetid://10709790948',
+        shield = 'rbxassetid://10723420042',
+        settings = 'rbxassetid://10734950309',
+        setting = 'rbxassetid://10734950309',
+        main = 'rbxassetid://107819132007001',
+        general = 'rbxassetid://107819132007001',
+        combat = 'rbxassetid://10734975486',
+        visuals = 'rbxassetid://10723415205',
+        misc = 'rbxassetid://10734950309',
+        farm = 'rbxassetid://10709791437',
+        roles = 'rbxassetid://10723415903',
+        config = 'rbxassetid://10734950309',
+        skins = 'rbxassetid://10709790948',
+    }
     function self:create_tab(title: string, icon: string)
-        local TabManager = {}
+        if type(icon) == "string" and TAB_ICON_ALIASES[icon:lower()] then
+            icon = TAB_ICON_ALIASES[icon:lower()]
+        elseif not icon or icon == "" or (not icon:find("rbxassetid://") and not icon:find("http")) then
+            icon = 'rbxassetid://86490552961317'
+        end
+        local TabManager = { _title = title }
         local LayoutOrder = 0;
         local font_params = Instance.new('GetTextBoundsParams')
         font_params.Text = title
@@ -3179,7 +3245,7 @@ function Library:create_ui()
                 ModuleName.Text = settings.title or "Feature"
             else
                 ModuleName.RichText = true
-                ModuleName.Text = settings.richtext or "<font color='rgb(255,255,255)'>Privot</font> user"
+                ModuleName.Text = settings.richtext or "<font color='rgb(255,255,255)'>pivot</font> user"
             end;
             ModuleName.Name = 'ModuleName'
             ModuleName.Size = UDim2.new(1, -32, 0, 15)
@@ -3472,7 +3538,7 @@ function Library:create_ui()
                     Body.Text = settings.text or ""
                 else
                     Body.RichText = true
-                    Body.Text = settings.richtext or "<font color='rgb(255,255,255)'>Privot</font> user"
+                    Body.Text = settings.richtext or "<font color='rgb(255,255,255)'>pivot</font> user"
                 end
                 Body.Size = UDim2.new(1, -16, 0, 18)
                 Body.Position = UDim2.new(0, 8, 0, 26)
@@ -3541,7 +3607,7 @@ function Library:create_ui()
                 if not body_is_rich then
                     Body.Text = settings.text or "" 
                 else
-                    Body.Text = settings.richtext or "<font color='rgb(255,255,255)'>Privot</font> user" 
+                    Body.Text = settings.richtext or "<font color='rgb(255,255,255)'>pivot</font> user" 
                 end
                 Body.Size = UDim2.new(1, -16, 0, 0)
                 Body.Position = UDim2.new(0, 8, 0, 7)
@@ -3578,7 +3644,7 @@ function Library:create_ui()
                     if not is_rich then
                         Body.Text = new_settings.text or "" 
                     else
-                        Body.Text = new_settings.richtext or "<font color='rgb(255,255,255)'>Privot</font> user" 
+                        Body.Text = new_settings.richtext or "<font color='rgb(255,255,255)'>pivot</font> user" 
                     end
                     task.defer(function()
                         if ModuleManager._state then
@@ -4246,13 +4312,25 @@ function Library:create_ui()
                 end
                 return true
             end
-            function ModuleManager:create_slider(settings: any)
+            function ModuleManager:create_slider(arg1: any, arg2: any)
+                local settings = {}
+                if type(arg1) == "string" then
+                    if type(arg2) == "table" then
+                        for k, v in pairs(arg2) do settings[k] = v end
+                    end
+                    settings.flag = arg1
+                elseif type(arg1) == "table" then
+                    for k, v in pairs(arg1) do settings[k] = v end
+                end
                 LayoutOrderModule = LayoutOrderModule + 1
-                settings.minimum_value = tonumber(settings.minimum_value) or 0
-                settings.maximum_value = tonumber(settings.maximum_value) or 100
+                settings.minimum_value = tonumber(settings.minimum_value or settings.minimum or settings.min) or 0
+                settings.maximum_value = tonumber(settings.maximum_value or settings.maximum or settings.max) or 100
                 if settings.minimum_value > settings.maximum_value then
                     settings.minimum_value, settings.maximum_value = settings.maximum_value, settings.minimum_value
                 end
+                settings.flag = settings.flag or settings.title or ("Slider_" .. tostring(LayoutOrderModule))
+                settings.title = settings.title or settings.Title or "Slider"
+                settings.callback = settings.callback or settings.Callback
                 local step = settings.round_number and 1 or 0.1
                 local function quantize(value: any)
                     local numeric_value = tonumber(value) or settings.minimum_value
@@ -5353,13 +5431,94 @@ function Library:create_ui()
                 elseif type(a1) == "table" then
                     for k, v in pairs(a1) do s[k] = v end
                 end
-                s.disablecheck = true
-                s.flag = s.flag or s.title or ("Button_" .. tostring(LayoutOrderModule + 1))
-                s.button_callback = s.callback or s.button_callback or s.Callback
-                return self_mod:create_feature(s)
+                s.title = s.title or s.Title or "Button"
+                local cb = s.callback or s.Callback or s.button_callback or function() end
+
+                LayoutOrderModule = LayoutOrderModule + 1
+                if self_mod._size == 0 then
+                    self_mod._size = 17
+                end
+                self_mod._size += 32
+
+                local ButtonFrame = Instance.new("Frame")
+                ButtonFrame.Name = "ButtonRow"
+                ButtonFrame.Size = UDim2.new(0, 208, 0, 26)
+                ButtonFrame.BackgroundTransparency = 1
+                ButtonFrame.LayoutOrder = LayoutOrderModule
+                ButtonFrame.Parent = Options
+
+                local Button = Instance.new("TextButton")
+                Button.Name = "Button"
+                Button.Size = UDim2.new(1, 0, 1, 0)
+                Button.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+                Button.Text = s.title
+                Button.TextColor3 = Color3.fromRGB(200, 200, 200)
+                Button.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
+                Button.TextSize = 11
+                Button.AutoButtonColor = false
+                Button.BorderSizePixel = 0
+                Button.ClipsDescendants = true
+                Button.Parent = ButtonFrame
+
+                local Corner = Instance.new("UICorner")
+                Corner.CornerRadius = UDim.new(0, 6)
+                Corner.Parent = Button
+
+                local Stroke = Instance.new("UIStroke")
+                Stroke.Color = Color3.fromRGB(44, 44, 44)
+                Stroke.Thickness = 1
+                Stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+                Stroke.Parent = Button
+
+                Button.MouseEnter:Connect(function()
+                    TweenService:Create(Button, TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+                        BackgroundColor3 = Color3.fromRGB(40, 40, 40),
+                        TextColor3 = Color3.fromRGB(255, 255, 255)
+                    }):Play()
+                    TweenService:Create(Stroke, TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+                        Color = Color3.fromRGB(65, 65, 65)
+                    }):Play()
+                end)
+
+                Button.MouseLeave:Connect(function()
+                    TweenService:Create(Button, TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+                        BackgroundColor3 = Color3.fromRGB(32, 32, 32),
+                        TextColor3 = Color3.fromRGB(200, 200, 200)
+                    }):Play()
+                    TweenService:Create(Stroke, TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
+                        Color = Color3.fromRGB(44, 44, 44)
+                    }):Play()
+                end)
+
+                Button.MouseButton1Click:Connect(function()
+                    TweenService:Create(Button, TweenInfo.new(0.08, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                        BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+                    }):Play()
+                    task.delay(0.08, function()
+                        TweenService:Create(Button, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+                            BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+                        }):Play()
+                    end)
+                    pcall(cb)
+                end)
+
+                if ModuleManager._state then
+                    sync_module_size(false)
+                end
+
+                return {
+                    SetTitle = function(_, t) Button.Text = t end,
+                    SetCallback = function(_, new_cb) cb = new_cb end,
+                    Fire = function() pcall(cb) end
+                }
             end
             ModuleManager.AddButton = ModuleManager.create_button
             ModuleManager.add_button = ModuleManager.create_button
+            ModuleManager.create_section = function(self_m, sec_title)
+                return self_m:create_divider({ showtopic = true, title = sec_title })
+            end
+            ModuleManager.AddSection = ModuleManager.create_section
+            ModuleManager.add_section = ModuleManager.create_section
 
             ModuleManager.AddFeature = ModuleManager.create_feature
             ModuleManager.add_feature = ModuleManager.create_feature
@@ -5382,26 +5541,52 @@ function Library:create_ui()
             self_lib:update_sections(LeftSection, RightSection)
         end
 
+        self._section_count = 0
+        function TabManager:create_section(name, side)
+            self._section_count = (self._section_count or 0) + 1
+            if not side then
+                side = (self._section_count % 2 == 1) and 'left' or 'right'
+            end
+            local module = self:create_module({
+                title = name or 'Section',
+                section = side
+            })
+            self._current_module = module
+            return module
+        end
+        TabManager.create_group = TabManager.create_section
+        TabManager.AddSection = TabManager.create_section
+        TabManager.add_section = TabManager.create_section
+        TabManager.AddGroup = TabManager.create_section
+        TabManager.add_group = TabManager.create_section
+
         function TabManager:_get_default_module(section)
             section = section or 'left'
             local key = '_default_module_' .. tostring(section)
             if not self[key] then
                 self[key] = self:create_module({
-                    title = 'General',
+                    title = (section == 'left' and (self._title or 'General')) or 'Options',
                     section = section
                 })
             end
             return self[key]
         end
 
+        function TabManager:_get_target_module(section)
+            if self._current_module then
+                return self._current_module
+            end
+            return self:_get_default_module(section or 'left')
+        end
+
         function TabManager:create_keybind(arg1: any, arg2: any)
-            return self:_get_default_module('left'):create_keybind(arg1, arg2)
+            return self:_get_target_module('left'):create_keybind(arg1, arg2)
         end
         TabManager.AddKeybind = TabManager.create_keybind
         TabManager.add_keybind = TabManager.create_keybind
 
         function TabManager:create_toggle(arg1: any, arg2: any)
-            return self:_get_default_module('left'):create_checkbox(arg1, arg2)
+            return self:_get_target_module('left'):create_checkbox(arg1, arg2)
         end
         TabManager.create_checkbox = TabManager.create_toggle
         TabManager.AddToggle = TabManager.create_toggle
@@ -5410,49 +5595,49 @@ function Library:create_ui()
         TabManager.add_checkbox = TabManager.create_toggle
 
         function TabManager:create_slider(arg1: any, arg2: any)
-            return self:_get_default_module('left'):create_slider(arg1, arg2)
+            return self:_get_target_module('left'):create_slider(arg1, arg2)
         end
         TabManager.AddSlider = TabManager.create_slider
         TabManager.add_slider = TabManager.create_slider
 
         function TabManager:create_dropdown(arg1: any, arg2: any)
-            return self:_get_default_module('left'):create_dropdown(arg1, arg2)
+            return self:_get_target_module('left'):create_dropdown(arg1, arg2)
         end
         TabManager.AddDropdown = TabManager.create_dropdown
         TabManager.add_dropdown = TabManager.create_dropdown
 
         function TabManager:create_textbox(arg1: any, arg2: any)
-            return self:_get_default_module('left'):create_textbox(arg1, arg2)
+            return self:_get_target_module('left'):create_textbox(arg1, arg2)
         end
         TabManager.AddTextbox = TabManager.create_textbox
         TabManager.add_textbox = TabManager.create_textbox
 
         function TabManager:create_button(arg1: any, arg2: any)
-            return self:_get_default_module('left'):create_button(arg1, arg2)
+            return self:_get_target_module('left'):create_button(arg1, arg2)
         end
         TabManager.AddButton = TabManager.create_button
         TabManager.add_button = TabManager.create_button
 
         function TabManager:create_feature(arg1: any, arg2: any)
-            return self:_get_default_module('left'):create_feature(arg1, arg2)
+            return self:_get_target_module('left'):create_feature(arg1, arg2)
         end
         TabManager.AddFeature = TabManager.create_feature
         TabManager.add_feature = TabManager.create_feature
 
         function TabManager:create_divider(arg1: any)
-            return self:_get_default_module('left'):create_divider(arg1)
+            return self:_get_target_module('left'):create_divider(arg1)
         end
         TabManager.AddDivider = TabManager.create_divider
         TabManager.add_divider = TabManager.create_divider
 
         function TabManager:create_paragraph(arg1: any, arg2: any)
-            return self:_get_default_module('left'):create_paragraph(arg1, arg2)
+            return self:_get_target_module('left'):create_paragraph(arg1, arg2)
         end
         TabManager.AddParagraph = TabManager.create_paragraph
         TabManager.add_paragraph = TabManager.create_paragraph
 
         function TabManager:create_text(arg1: any, arg2: any)
-            return self:_get_default_module('left'):create_text(arg1, arg2)
+            return self:_get_target_module('left'):create_text(arg1, arg2)
         end
         TabManager.AddText = TabManager.create_text
         TabManager.add_text = TabManager.create_text
@@ -5495,7 +5680,7 @@ function Library:create_ui()
     Connections:disconnect('mobile_toggle_viewport')
     if self._is_mobile or UserInputService.TouchEnabled then
         local _toggle_gui = Instance.new('ScreenGui')
-        _toggle_gui.Name = '_privot_toggle'
+        _toggle_gui.Name = '_pivot_toggle'
         _toggle_gui.ResetOnSpawn = false
         _toggle_gui.IgnoreGuiInset = true
         _toggle_gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling

@@ -69,6 +69,7 @@ local Lighting = cloneref(game:GetService('Lighting'))
 local Players = cloneref(game:GetService('Players'))
 local CoreGui = cloneref(game:GetService('CoreGui'))
 local Debris = cloneref(game:GetService('Debris'))
+local LocalizationService = cloneref(game:GetService('LocalizationService'))
 
 -- Identity 8 (CoreScript) Safe Mouse Handling (Angeli Architecture)
 -- Never calls Players.LocalPlayer:GetMouse() which throws a permission error under Identity 8.
@@ -516,14 +517,20 @@ local function deep_copy_serialize(value: any, seen: any?, depth: number?)
         return { __pivot_type = "Color3", __roni_type = "Color3", values = { value.R, value.G, value.B } }
     elseif value_type == "Vector2" then
         return { __pivot_type = "Vector2", __roni_type = "Vector2", values = { value.X, value.Y } }
+    elseif value_type == "Vector3" then
+        return { __pivot_type = "Vector3", __roni_type = "Vector3", values = { value.X, value.Y, value.Z } }
+    elseif value_type == "CFrame" then
+        return { __pivot_type = "CFrame", __roni_type = "CFrame", values = { value:GetComponents() } }
+    elseif value_type == "EnumItem" then
+        return { __pivot_type = "EnumItem", __roni_type = "EnumItem", enum = tostring(value) }
     elseif value_type ~= "table" then
         if value_type == "number" and (value ~= value or value == math.huge or value == -math.huge) then
-            error("config numbers must be finite")
+            return nil
         end
         if value_type == "nil" or value_type == "boolean" or value_type == "number" or value_type == "string" then
             return value
         end
-        error("unsupported config value type " .. value_type)
+        return nil
     end
 
     seen = seen or {}
@@ -539,10 +546,12 @@ local function deep_copy_serialize(value: any, seen: any?, depth: number?)
             error("config table is too large")
         end
         local key_type = type(key)
-        if key_type ~= "string" and key_type ~= "number" then
-            error("config table keys must be strings or numbers")
+        if key_type == "string" or key_type == "number" then
+            local serialized_child = deep_copy_serialize(child, seen, depth + 1)
+            if serialized_child ~= nil then
+                copy[key] = serialized_child
+            end
         end
-        copy[key] = deep_copy_serialize(child, seen, depth + 1)
     end
     seen[value] = nil
     return copy
@@ -558,6 +567,21 @@ local function deep_copy_deserialize(value: any, depth: number?)
         return Color3.new(tagged_values[1], tagged_values[2], tagged_values[3])
     elseif (value.__pivot_type == "Vector2" or value.__roni_type == "Vector2") and type(tagged_values) == "table" and type(tagged_values[1]) == "number" and type(tagged_values[2]) == "number" then
         return Vector2.new(tagged_values[1], tagged_values[2])
+    elseif (value.__pivot_type == "Vector3" or value.__roni_type == "Vector3") and type(tagged_values) == "table" and type(tagged_values[1]) == "number" and type(tagged_values[2]) == "number" and type(tagged_values[3]) == "number" then
+        return Vector3.new(tagged_values[1], tagged_values[2], tagged_values[3])
+    elseif (value.__pivot_type == "CFrame" or value.__roni_type == "CFrame") and type(tagged_values) == "table" and #tagged_values == 12 then
+        return CFrame.new(table.unpack(tagged_values))
+    elseif (value.__pivot_type == "EnumItem" or value.__roni_type == "EnumItem") and type(value.enum) == "string" then
+        local enum_str = value.enum
+        local key_name = enum_str:gsub("^Enum%.KeyCode%.", "")
+        local ok, kc = pcall(function() return Enum.KeyCode[key_name] end)
+        if ok and kc then return kc end
+        local enum_type, item_name = enum_str:match("^Enum%.([^%.]+)%.([^%.]+)$")
+        if enum_type and item_name then
+            local ok2, item = pcall(function() return Enum[enum_type][item_name] end)
+            if ok2 and item then return item end
+        end
+        return enum_str
     end
     local copy = {}
     for key, child in pairs(value) do
@@ -773,6 +797,408 @@ function Config:load(file_name: any, default: any?)
     end
     return decoded
 end
+
+local LANGUAGE_OPTIONS = {
+    "Auto",
+    "English",
+    "Spanish",
+    "Portuguese",
+    "Russian",
+    "French",
+    "German",
+    "Indonesian",
+    "Vietnamese",
+    "Turkish",
+    "Chinese (Simplified)",
+    "Japanese",
+    "Korean",
+    "Arabic",
+    "Filipino",
+    "Polish",
+    "Thai",
+}
+
+local LANGUAGE_CODE_MAP = {
+    ["Auto"] = "auto",
+    ["English"] = "en",
+    ["Spanish"] = "es",
+    ["Portuguese"] = "pt",
+    ["Russian"] = "ru",
+    ["French"] = "fr",
+    ["German"] = "de",
+    ["Indonesian"] = "id",
+    ["Vietnamese"] = "vi",
+    ["Turkish"] = "tr",
+    ["Chinese (Simplified)"] = "zh-CN",
+    ["Japanese"] = "ja",
+    ["Korean"] = "ko",
+    ["Arabic"] = "ar",
+    ["Filipino"] = "tl",
+    ["Polish"] = "pl",
+    ["Thai"] = "th",
+}
+
+local CODE_TO_NAME_MAP = {
+    ["en"] = "English",
+    ["es"] = "Spanish",
+    ["pt"] = "Portuguese",
+    ["ru"] = "Russian",
+    ["fr"] = "French",
+    ["de"] = "German",
+    ["id"] = "Indonesian",
+    ["vi"] = "Vietnamese",
+    ["tr"] = "Turkish",
+    ["zh"] = "Chinese (Simplified)",
+    ["zh-cn"] = "Chinese (Simplified)",
+    ["ja"] = "Japanese",
+    ["ko"] = "Korean",
+    ["ar"] = "Arabic",
+    ["tl"] = "Filipino",
+    ["fil"] = "Filipino",
+    ["pl"] = "Polish",
+    ["th"] = "Thai",
+}
+
+local Translator = {
+    _current_lang = "en",
+    _selected_option = "Auto",
+    _cache = {},
+    _cache_loaded = {},
+    _bindings = {},
+    _queue = {},
+    _queue_active = false,
+    _roblox_translator = nil,
+    _save_debounce = {},
+}
+
+function Translator:detect_locale()
+    local locale = nil
+    pcall(function()
+        if self._roblox_translator and self._roblox_translator.LocaleId and self._roblox_translator.LocaleId ~= "" then
+            locale = tostring(self._roblox_translator.LocaleId):lower():gsub("_", "-")
+        elseif Players.LocalPlayer and Players.LocalPlayer.LocaleId and Players.LocalPlayer.LocaleId ~= "" then
+            locale = tostring(Players.LocalPlayer.LocaleId):lower():gsub("_", "-")
+        elseif LocalizationService and LocalizationService.RobloxLocaleId and LocalizationService.RobloxLocaleId ~= "" then
+            locale = tostring(LocalizationService.RobloxLocaleId):lower():gsub("_", "-")
+        end
+    end)
+    locale = locale or "en"
+    if locale:find("^zh") then
+        return "zh-CN"
+    end
+    local prefix = locale:match("^([a-z]+)")
+    if prefix and (LANGUAGE_CODE_MAP[CODE_TO_NAME_MAP[prefix] or ""] or table.find(LANGUAGE_OPTIONS, CODE_TO_NAME_MAP[prefix])) then
+        return prefix
+    end
+    return "en"
+end
+
+function Translator:load_cache(lang: string)
+    if self._cache_loaded[lang] then return end
+    self._cache_loaded[lang] = true
+    self._cache[lang] = self._cache[lang] or {}
+    if not isfile or not readfile then return end
+    local path = ConfigFolder .. "/translations_" .. tostring(lang) .. ".json"
+    if isfile(path) then
+        local ok, content = pcall(readfile, path)
+        if ok and type(content) == "string" and content ~= "" then
+            local ok_dec, decoded = pcall(function() return HttpService:JSONDecode(content) end)
+            if ok_dec and type(decoded) == "table" then
+                for k, v in pairs(decoded) do
+                    if type(k) == "string" and type(v) == "string" then
+                        self._cache[lang][k] = v
+                    end
+                end
+            end
+        end
+    end
+end
+
+function Translator:save_cache(lang: string)
+    if not writefile or not self._cache[lang] or self._save_debounce[lang] then return end
+    self._save_debounce[lang] = true
+    task.delay(1.5, function()
+        self._save_debounce[lang] = nil
+        pcall(function()
+            if makefolder and isfolder and not isfolder(ConfigFolder) then
+                pcall(makefolder, ConfigFolder)
+            end
+            local path = ConfigFolder .. "/translations_" .. tostring(lang) .. ".json"
+            local encoded = HttpService:JSONEncode(self._cache[lang] or {})
+            writefile(path, encoded)
+        end)
+    end)
+end
+
+function Translator:request_http(url: string)
+    local req = request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
+    if req then
+        local ok, res = pcall(req, { Url = url, Method = "GET" })
+        if ok and res and (res.StatusCode == 200 or res.Status == 200 or res.Success) then
+            return res.Body or res.body
+        end
+    end
+    local ok_get, body = pcall(function()
+        return game:HttpGet(url)
+    end)
+    if ok_get and body and body ~= "" then
+        return body
+    end
+    local ok_svc, svc_res = pcall(function()
+        return HttpService:GetAsync(url)
+    end)
+    if ok_svc and svc_res and svc_res ~= "" then
+        return svc_res
+    end
+    return nil
+end
+
+function Translator:translate_raw(text: string, target_lang: string, callback: any)
+    if target_lang == "en" or text == "" or tonumber(text) ~= nil then
+        callback(text)
+        return
+    end
+
+    if self._roblox_translator then
+        local ok, roblox_res = pcall(function()
+            return self._roblox_translator:Translate(game, text)
+        end)
+        if ok and type(roblox_res) == "string" and roblox_res ~= "" and roblox_res ~= text then
+            callback(roblox_res)
+            return
+        end
+    end
+
+    local encoded = HttpService:UrlEncode(text)
+    local url = string.format("https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=%s&dt=t&q=%s", target_lang, encoded)
+    local body = self:request_http(url)
+    if body and type(body) == "string" then
+        local ok, data = pcall(function() return HttpService:JSONDecode(body) end)
+        if ok and type(data) == "table" and type(data[1]) == "table" then
+            local combined = ""
+            for _, seg in ipairs(data[1]) do
+                if type(seg) == "table" and type(seg[1]) == "string" then
+                    combined = combined .. seg[1]
+                end
+            end
+            if combined ~= "" then
+                callback(combined)
+                return
+            end
+        end
+    end
+
+    callback(text)
+end
+
+function Translator:process_queue()
+    if self._queue_active or #self._queue == 0 then return end
+    self._queue_active = true
+    task.spawn(function()
+        while #self._queue > 0 do
+            local item = table.remove(self._queue, 1)
+            local lang = item.lang
+            local text = item.text
+            self._cache[lang] = self._cache[lang] or {}
+            if self._cache[lang][text] then
+                for _, cb in ipairs(item.callbacks) do
+                    pcall(cb, self._cache[lang][text])
+                end
+            else
+                self:translate_raw(text, lang, function(translated)
+                    if translated and translated ~= text and translated ~= "" then
+                        self._cache[lang][text] = translated
+                        self:save_cache(lang)
+                    end
+                    for _, cb in ipairs(item.callbacks) do
+                        pcall(cb, translated)
+                    end
+                end)
+                task.wait(0.04)
+            end
+        end
+        self._queue_active = false
+    end)
+end
+
+function Translator:queue_translate(text: string, lang: string, callback: any)
+    self._cache[lang] = self._cache[lang] or {}
+    if self._cache[lang][text] then
+        callback(self._cache[lang][text])
+        return
+    end
+    for _, item in ipairs(self._queue) do
+        if item.text == text and item.lang == lang then
+            table.insert(item.callbacks, callback)
+            return
+        end
+    end
+    table.insert(self._queue, {
+        text = text,
+        lang = lang,
+        callbacks = { callback }
+    })
+    self:process_queue()
+end
+
+function Translator:apply_binding(entry: any)
+    local inst = entry.instance
+    if not inst then return end
+    local is_alive = pcall(function() return inst.Parent end)
+    if not is_alive then return end
+
+    local lang = self._current_lang
+    local raw = entry.raw
+    if lang == "en" then
+        local val = raw
+        if entry.transform then val = entry.transform(val) end
+        pcall(function() inst[entry.property] = val end)
+        return
+    end
+    self._cache[lang] = self._cache[lang] or {}
+    local cached = self._cache[lang][raw]
+    if cached then
+        local val = cached
+        if entry.transform then val = entry.transform(val) end
+        pcall(function() inst[entry.property] = val end)
+        return
+    end
+    local fallback = raw
+    if entry.transform then fallback = entry.transform(fallback) end
+    pcall(function() inst[entry.property] = fallback end)
+
+    self:queue_translate(raw, lang, function(translated)
+        if inst and self._current_lang == lang then
+            local still_alive = pcall(function() return inst.Parent end)
+            if still_alive then
+                local val = translated
+                if entry.transform then val = entry.transform(val) end
+                pcall(function() inst[entry.property] = val end)
+            end
+        end
+    end)
+end
+
+function Translator:bind(instance: Instance, raw_text: string?, property: string?, transform: any?)
+    if not instance or type(raw_text) ~= "string" or raw_text == "" then return end
+    property = property or "Text"
+    local entry = {
+        instance = instance,
+        raw = raw_text,
+        property = property,
+        transform = transform,
+    }
+    table.insert(self._bindings, entry)
+    pcall(function()
+        instance.Destroying:Once(function()
+            for i = #self._bindings, 1, -1 do
+                if self._bindings[i].instance == instance then
+                    table.remove(self._bindings, i)
+                    break
+                end
+            end
+        end)
+    end)
+    self:apply_binding(entry)
+    if instance.Parent == nil then
+        local parent_conn
+        parent_conn = instance:GetPropertyChangedSignal("Parent"):Connect(function()
+            if instance.Parent ~= nil then
+                if parent_conn then
+                    parent_conn:Disconnect()
+                    parent_conn = nil
+                end
+                self:apply_binding(entry)
+            end
+        end)
+    end
+end
+
+function Translator:set_language(option: string)
+    self._selected_option = option or "Auto"
+    local target_lang
+    if self._selected_option == "Auto" then
+        target_lang = self:detect_locale()
+    else
+        target_lang = LANGUAGE_CODE_MAP[self._selected_option] or "en"
+    end
+    self._current_lang = target_lang
+    pcall(function()
+        if getgenv().GG then
+            GG.SelectedLanguage = target_lang
+        end
+        SelectedLanguage = target_lang
+    end)
+    self:load_cache(target_lang)
+    for i = #self._bindings, 1, -1 do
+        local entry = self._bindings[i]
+        local is_alive = false
+        if entry.instance then
+            local ok = pcall(function() return entry.instance.Parent end)
+            if ok then is_alive = true end
+        end
+        if is_alive then
+            self:apply_binding(entry)
+        else
+            table.remove(self._bindings, i)
+        end
+    end
+    pcall(function()
+        if Library.update_keybind_list then
+            Library:update_keybind_list()
+        end
+        if Library._current and Library._current.update_keybind_list then
+            Library._current:update_keybind_list()
+        end
+    end)
+end
+
+function Translator:init(saved_option: string?)
+    local opt = saved_option or "Auto"
+    self._selected_option = opt
+    local target_lang
+    if opt == "Auto" then
+        target_lang = self:detect_locale()
+    else
+        target_lang = LANGUAGE_CODE_MAP[opt] or "en"
+    end
+    self._current_lang = target_lang
+    pcall(function()
+        if getgenv().GG then
+            GG.SelectedLanguage = target_lang
+        end
+        SelectedLanguage = target_lang
+    end)
+    self:load_cache(target_lang)
+
+    pcall(function()
+        local player = Players.LocalPlayer
+        if LocalizationService and player then
+            task.spawn(function()
+                local ok, trans = pcall(function()
+                    return LocalizationService:GetTranslatorForPlayerAsync(player)
+                end)
+                if ok and trans then
+                    Translator._roblox_translator = trans
+                    if Translator._selected_option == "Auto" then
+                        local detected = Translator:detect_locale()
+                        if detected and detected ~= "en" and detected ~= Translator._current_lang then
+                            Translator:set_language("Auto")
+                        end
+                    end
+                    pcall(function()
+                        trans:GetPropertyChangedSignal("LocaleId"):Connect(function()
+                            if Translator._selected_option == "Auto" then
+                                Translator:set_language("Auto")
+                            end
+                        end)
+                    end)
+                end
+            end)
+        end
+    end)
+end
+
 local Library = {
     _config = Config:load(game.GameId),
     _choosing_keybind = false,
@@ -800,6 +1226,8 @@ local Library = {
     _keybinds_widget = nil,
     _keybinds_uiscale = nil,
     _current = nil,
+    Translator = Translator,
+    LANGUAGE_OPTIONS = LANGUAGE_OPTIONS,
 }
 local function resolve_library(self: any)
     if self and type(self) == "table" then
@@ -901,7 +1329,7 @@ function Library.SendNotification(settings)
     InnerFrame.Size = UDim2.new(1, 0, 0, 0)
     InnerFrame.Position = UDim2.new(1, 0, 0, 0)
     InnerFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-    InnerFrame.BackgroundTransparency = 0.05
+    InnerFrame.BackgroundTransparency = 0
     InnerFrame.BorderSizePixel = 0
     InnerFrame.Name = "InnerFrame"
     InnerFrame.Parent = Notification
@@ -943,6 +1371,7 @@ function Library.SendNotification(settings)
     TextLayout.Parent = TextContainer
     local Title = Instance.new("TextLabel")
     Title.Text = settings.title or "Notification Title"
+    Translator:bind(Title, settings.title or "Notification Title")
     Title.TextColor3 = Color3.fromRGB(255, 255, 255)
     Title.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
     Title.TextSize = 13
@@ -956,6 +1385,7 @@ function Library.SendNotification(settings)
     Title.Parent = TextContainer
     local Body = Instance.new("TextLabel")
     Body.Text = settings.text or "This is the body of the notification."
+    Translator:bind(Body, settings.text or "This is the body of the notification.")
     Body.TextColor3 = Color3.fromRGB(185, 185, 185)
     Body.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Medium, Enum.FontStyle.Normal)
     Body.TextSize = 11
@@ -1536,6 +1966,35 @@ function Library:_exportable_keybinds()
     end
     return out
 end
+function Library:_exportable_named_flags()
+    local out = {}
+    local src = (self._config and self._config._flags) or (Library._config and Library._config._flags) or {}
+    for flag, value in pairs(src) do
+        if type(flag) == "string" and not self:_is_internal_flag(flag) then
+            local cloned, clone_error = clone_config_value(value)
+            if not clone_error and cloned ~= nil then
+                out[flag] = cloned
+            else
+                out[flag] = value
+            end
+        end
+    end
+    return out
+end
+function Library:_exportable_named_keybinds()
+    local out = {}
+    local src = (self._config and self._config._keybinds) or (Library._config and Library._config._keybinds) or {}
+    for flag, keybind in pairs(src) do
+        if type(flag) == "string" and not self:_is_internal_flag(flag) then
+            if typeof(keybind) == "EnumItem" then
+                out[flag] = tostring(keybind)
+            elseif type(keybind) == "string" and keybind ~= "" then
+                out[flag] = keybind
+            end
+        end
+    end
+    return out
+end
 function Library:encode_share()
     local records = {}
     for flag, value in pairs(self:_exportable_flags()) do
@@ -1650,6 +2109,7 @@ function Library:apply_config(flags: any, keybinds: any?, options: any?)
         return { ok = false, applied = 0, errors = { "config payload must contain tables" } }
     end
 
+    local lib = resolve_library(self)
     local next_flags = {}
     local next_keybinds = {}
     for flag, value in pairs(self._config._flags or {}) do next_flags[flag] = value end
@@ -1668,10 +2128,16 @@ function Library:apply_config(flags: any, keybinds: any?, options: any?)
 
     local errors = {}
     local skipped = 0
+    local is_named_or_force = (options.source == "named" or options.force == true)
     for flag, value in pairs(flags) do
         local metadata = type(flag) == "string" and self._flag_metadata[flag] or nil
         if not metadata or not metadata.export or self:_is_internal_flag(flag) then
-            skipped += 1
+            if not self:_is_internal_flag(flag) and is_named_or_force then
+                local cloned = clone_config_value(value)
+                next_flags[flag] = cloned ~= nil and cloned or value
+            else
+                skipped += 1
+            end
         elseif metadata.type == nil or typeof(value) ~= metadata.type then
             errors[#errors + 1] = "wrong value type for " .. flag
         else
@@ -1685,13 +2151,24 @@ function Library:apply_config(flags: any, keybinds: any?, options: any?)
     end
     for flag, stored_keybind in pairs(keybinds or {}) do
         local metadata = type(flag) == "string" and self._flag_metadata[flag] or nil
-        local key_name = type(stored_keybind) == "string" and stored_keybind:gsub("^Enum%.KeyCode%.", "") or nil
-        if not metadata or not metadata.keybind_export or self:_is_internal_flag(flag) then
-            skipped += 1
-        elseif not key_name or #key_name > 64 or not key_name:match("^[%w_]+$") then
-            errors[#errors + 1] = "invalid keybind for " .. flag
-        else
-            next_keybinds[flag] = "Enum.KeyCode." .. key_name
+        local key_name = nil
+        if typeof(stored_keybind) == "EnumItem" then
+            key_name = stored_keybind.Name
+        elseif type(stored_keybind) == "string" then
+            key_name = stored_keybind:gsub("^Enum%.KeyCode%.", "")
+        end
+        if not self:_is_internal_flag(flag) then
+            if not metadata or not metadata.keybind_export then
+                if is_named_or_force and key_name and #key_name <= 64 and key_name:match("^[%w_]+$") then
+                    next_keybinds[flag] = "Enum.KeyCode." .. key_name
+                else
+                    skipped += 1
+                end
+            elseif not key_name or #key_name > 64 or not key_name:match("^[%w_]+$") then
+                errors[#errors + 1] = "invalid keybind for " .. flag
+            else
+                next_keybinds[flag] = "Enum.KeyCode." .. key_name
+            end
         end
     end
     if #errors > 0 then
@@ -1710,6 +2187,16 @@ function Library:apply_config(flags: any, keybinds: any?, options: any?)
             changed_keybinds[#changed_keybinds + 1] = flag
         end
     end
+    for flag, value in pairs(next_flags) do
+        if not order_index[flag] and not self:values_equal(self._config._flags[flag], value) then
+            changed_flags[#changed_flags + 1] = flag
+        end
+    end
+    for flag, keybind in pairs(next_keybinds) do
+        if not order_index[flag] and self._config._keybinds[flag] ~= keybind then
+            changed_keybinds[#changed_keybinds + 1] = flag
+        end
+    end
     table.sort(changed_flags, function(left, right)
         local left_priority = (self._flag_metadata[left] and self._flag_metadata[left].priority) or 100
         local right_priority = (self._flag_metadata[right] and self._flag_metadata[right].priority) or 100
@@ -1721,6 +2208,15 @@ function Library:apply_config(flags: any, keybinds: any?, options: any?)
 
     self._config._flags = next_flags
     self._config._keybinds = next_keybinds
+    if lib and lib ~= self and lib._config then
+        lib._config._flags = next_flags
+        lib._config._keybinds = next_keybinds
+    end
+    if Library and Library ~= self and Library._config then
+        Library._config._flags = next_flags
+        Library._config._keybinds = next_keybinds
+    end
+
     Config:begin_batch()
     local apply_options = {
         persist = false,
@@ -1737,8 +2233,27 @@ function Library:apply_config(flags: any, keybinds: any?, options: any?)
         end
     end
     for _, flag in ipairs(changed_keybinds) do
+        local key_name = self:get_keybind_name(flag)
+        if self._keybind_entries and self._keybind_entries[flag] then
+            self._keybind_entries[flag].key_name = key_name
+        end
+        if lib and lib._keybind_entries and lib._keybind_entries[flag] then
+            lib._keybind_entries[flag].key_name = key_name
+        end
+        if Library._keybind_entries and Library._keybind_entries[flag] then
+            Library._keybind_entries[flag].key_name = key_name
+        end
         self:_notify_keybind(flag)
+        if lib and lib ~= self then lib:_notify_keybind(flag) end
     end
+    if next_flags and next_flags['ui_language'] then
+        pcall(function() Translator:set_language(next_flags['ui_language']) end)
+    elseif Translator._selected_option and Translator._selected_option ~= "English" then
+        pcall(function() Translator:set_language(Translator._selected_option) end)
+    end
+    self:update_keybind_list()
+    if lib and lib ~= self then lib:update_keybind_list() end
+
     local changed_count = #changed_flags + #changed_keybinds
     local save_ok, save_error = Config:end_batch(game.GameId, self._config, changed_count > 0)
     if not save_ok then
@@ -1822,8 +2337,8 @@ function Library:save_named_config(name: string)
     if read_error then return false, read_error end
     map[name] = {
         _version = 2,
-        _flags = self:_exportable_flags(),
-        _keybinds = self:_exportable_keybinds(),
+        _flags = self:_exportable_named_flags(),
+        _keybinds = self:_exportable_named_keybinds(),
     }
     return self:_write_named_configs(map)
 end
@@ -1952,6 +2467,7 @@ function Library:update_keybind_list()
         titleLabel.BorderSizePixel = 0
         titleLabel.ZIndex = 52
         titleLabel.Parent = row
+        Translator:bind(titleLabel, entry.title or tostring(flag))
 
         local keyBtn = Instance.new("TextButton")
         keyBtn.Name = "Key"
@@ -2007,6 +2523,7 @@ function Library:update_keybind_list()
             emptyLabel.BackgroundTransparency = 1
             emptyLabel.Size = UDim2.new(1, 0, 1, 0)
             emptyLabel.Text = "No active keybinds"
+            Translator:bind(emptyLabel, "No active keybinds")
             emptyLabel.TextColor3 = Color3.fromRGB(130, 130, 130)
             emptyLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium, Enum.FontStyle.Italic)
             emptyLabel.TextSize = 12
@@ -2185,7 +2702,7 @@ function Library:create_ui()
     Container.BorderColor3 = Color3.fromRGB(0, 0, 0)
     Container.AnchorPoint = Vector2.new(0.5, 0.5)
     Container.Name = 'Container'
-    Container.BackgroundTransparency = 0.05000000074505806
+    Container.BackgroundTransparency = 0
     Container.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
     Container.Position = UDim2.new(0.5, 0, 0.5, 0)
     Container.Size = UDim2.new(0, 0, 0, 0)
@@ -2375,6 +2892,7 @@ function Library:create_ui()
     KBTitle.BackgroundTransparency = 1
     KBTitle.Size = UDim2.new(1, 0, 1, 0)
     KBTitle.Text = "Keybinds"
+    Translator:bind(KBTitle, "Keybinds")
     KBTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
     KBTitle.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
     KBTitle.TextSize = 13
@@ -2446,6 +2964,9 @@ function Library:create_ui()
             }):Play()
         end
     end)
+
+    local saved_ui_lang = (self._config and self._config._flags and self._config._flags['ui_language']) or "Auto"
+    Translator:init(saved_ui_lang)
 
     if self._config and self._config._flags then
         if self._config._flags['ui_show_keybinds_hud'] == nil then
@@ -2540,7 +3061,7 @@ function Library:create_ui()
     end)
     function self:Update1Run(a)
         if a == "nil" then
-            Container.BackgroundTransparency = 0.05000000074505806;
+            Container.BackgroundTransparency = 0;
         else
             pcall(function()
                 Container.BackgroundTransparency = tonumber(a);
@@ -2615,7 +3136,17 @@ function Library:create_ui()
             self:load()
         end
     end)
+    task.defer(function()
+        local current_opt = Translator._selected_option or "Auto"
+        if current_opt ~= "English" then
+            Translator:set_language(current_opt)
+        end
+    end)
     function self:create_configs_tab()
+        if self._configs_tab_created then
+            return
+        end
+        self._configs_tab_created = true
         local CFG_ICON = 'rbxassetid://86490552961317'
         local NameFlag = 'pivot_cfg_name'
         local CodeFlag = 'pivot_cfg_code'
@@ -2870,6 +3401,32 @@ function Library:create_ui()
                 self:update_keybind_list()
             end
         })
+        local initial_lang = (self._config and self._config._flags and self._config._flags['ui_language']) or "Auto"
+        local lang_dd = Module:create_dropdown({
+            title = 'Language',
+            flag = 'ui_language',
+            options = LANGUAGE_OPTIONS,
+            default = initial_lang,
+            persist = true,
+            export = false,
+            callback = function(selected)
+                Translator:set_language(selected)
+                if self._config and self._config._flags then
+                    self._config._flags['ui_language'] = selected
+                    Config:save(game.GameId, self._config)
+                end
+            end
+        })
+        Library:register_component('ui_language', function(val, opts)
+            if type(val) == "string" and val ~= "" then
+                if lang_dd and lang_dd.update then
+                    pcall(function()
+                        lang_dd:update(val, { persist = false, callback = false })
+                    end)
+                end
+                Translator:set_language(val)
+            end
+        end)
     end
     local function get_tab_target_y(btn: TextButton)
         local scale = (self._ui_scale and self._ui_scale > 0) and self._ui_scale or 1
@@ -3015,6 +3572,7 @@ function Library:create_ui()
         TextLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
         TextLabel.TextTransparency = 0.65 
         TextLabel.Text = title
+        Translator:bind(TextLabel, title)
         TextLabel.Size = UDim2.new(1, -44, 0, 16)
         TextLabel.AnchorPoint = Vector2.new(0, 0.5)
         TextLabel.Position = UDim2.new(0, 38, 0.5, 0)
@@ -3158,6 +3716,8 @@ function Library:create_ui()
             self:update_sections(LeftSection, RightSection)
         end)
         function TabManager:create_module(settings: any)
+            settings = settings or {}
+            settings.flag = settings.flag or (settings.title and (settings.title:gsub("%s+", "") .. "ModuleToggle")) or ("Module_" .. tostring(math.random(10000, 99999)))
             local LayoutOrderModule = 0;
             local ModuleManager = {
                 _state = false,
@@ -3243,6 +3803,7 @@ function Library:create_ui()
             ModuleName.TextTransparency = 0.1
             if not settings.rich then
                 ModuleName.Text = settings.title or "Feature"
+                Translator:bind(ModuleName, settings.title or "Feature")
             else
                 ModuleName.RichText = true
                 ModuleName.Text = settings.richtext or "<font color='rgb(255,255,255)'>pivot</font> user"
@@ -3264,6 +3825,9 @@ function Library:create_ui()
             Description.TextColor3 = Color3.fromRGB(160, 160, 160)
             Description.TextTransparency = 0.3
             Description.Text = settings.description or ""
+            if settings.description and settings.description ~= "" then
+                Translator:bind(Description, settings.description)
+            end
             Description.Name = 'Description'
             Description.Size = UDim2.new(1, -32, 0, 26)
             Description.AnchorPoint = Vector2.new(0, 0)
@@ -3523,6 +4087,7 @@ function Library:create_ui()
                 Title.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
                 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
                 Title.Text = settings.title or "Title"
+                Translator:bind(Title, settings.title or "Title")
                 Title.Size = UDim2.new(1, -16, 0, 18)
                 Title.Position = UDim2.new(0, 8, 0, 6)
                 Title.BackgroundTransparency = 1
@@ -3536,6 +4101,9 @@ function Library:create_ui()
                 Body.TextColor3 = Color3.fromRGB(180, 180, 180)
                 if not settings.rich then
                     Body.Text = settings.text or ""
+                    if settings.text and settings.text ~= "" then
+                        Translator:bind(Body, settings.text)
+                    end
                 else
                     Body.RichText = true
                     Body.Text = settings.richtext or "<font color='rgb(255,255,255)'>pivot</font> user"
@@ -3606,6 +4174,9 @@ function Library:create_ui()
                 Body.RichText = body_is_rich
                 if not body_is_rich then
                     Body.Text = settings.text or "" 
+                    if settings.text and settings.text ~= "" then
+                        Translator:bind(Body, settings.text)
+                    end
                 else
                     Body.Text = settings.richtext or "<font color='rgb(255,255,255)'>pivot</font> user" 
                 end
@@ -3679,6 +4250,7 @@ function Library:create_ui()
                 Label.TextColor3 = Color3.fromRGB(255, 255, 255)
                 Label.TextTransparency = 0.2
                 Label.Text = settings.title or "Enter text"
+                Translator:bind(Label, settings.title or "Enter text")
                 Label.Size = UDim2.new(0, 208, 0, 14)
                 Label.AnchorPoint = Vector2.new(0, 0)
                 Label.Position = UDim2.new(0, 0, 0, 0)
@@ -3693,6 +4265,7 @@ function Library:create_ui()
                 Textbox.TextColor3 = Color3.fromRGB(255, 255, 255)
                 Textbox.PlaceholderColor3 = Color3.fromRGB(120, 120, 120)
                 Textbox.PlaceholderText = settings.placeholder or "Enter text..."
+                Translator:bind(Textbox, settings.placeholder or "Enter text...", "PlaceholderText")
                 Textbox.Text = initial_text
                 Textbox.Name = 'Textbox'
                 Textbox.Size = UDim2.new(0, 208, 0, 24)
@@ -3903,6 +4476,7 @@ function Library:create_ui()
                 end
                 TitleLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
                 TitleLabel.Text = settings.title or "Feature"
+                Translator:bind(TitleLabel, settings.title or "Feature")
                 TitleLabel.Size = UDim2.new(1, -75, 1, 0)
                 TitleLabel.AnchorPoint = Vector2.new(0, 0.5)
                 TitleLabel.Position = UDim2.new(0, 2, 0.5, 0)
@@ -4162,6 +4736,7 @@ function Library:create_ui()
                 Title.Size = UDim2.new(1, -60, 1, 0)
                 Title.BackgroundTransparency = 1
                 Title.Text = title
+                Translator:bind(Title, title)
                 Title.TextColor3 = Color3.fromRGB(180, 180, 180)
                 Title.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
                 Title.TextSize = 12
@@ -4291,6 +4866,9 @@ function Library:create_ui()
                     TextLabel.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
                     TextLabel.TextColor3 = Color3.fromRGB(150, 150, 150) 
                     TextLabel.Text = string.upper(settings.title or "")
+                    if settings.title and settings.title ~= "" then
+                        Translator:bind(TextLabel, settings.title, "Text", string.upper)
+                    end
                     TextLabel.Size = UDim2.new(0, 0, 0, 14)
                     TextLabel.AutomaticSize = Enum.AutomaticSize.X
                     TextLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
@@ -4398,6 +4976,7 @@ function Library:create_ui()
                 end;
                 TextLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
                 TextLabel.Text = settings.title
+                Translator:bind(TextLabel, settings.title)
                 TextLabel.Size = UDim2.new(1, -56, 0, 14)
                 TextLabel.Position = UDim2.new(0, 0, 0, 0)
                 TextLabel.BackgroundTransparency = 1
@@ -4735,6 +5314,7 @@ function Library:create_ui()
                 TextLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
                 TextLabel.TextTransparency = 0.2
                 TextLabel.Text = settings.title
+                Translator:bind(TextLabel, settings.title)
                 TextLabel.Size = UDim2.new(1, 0, 0, 14)
                 TextLabel.BackgroundTransparency = 1
                 TextLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -5149,6 +5729,7 @@ function Library:create_ui()
                 FeatureButton.BackgroundColor3 = Color3.fromRGB(28, 28, 28)
                 FeatureButton.TextColor3 = Color3.fromRGB(200, 200, 200)
                 FeatureButton.Text = settings.title or "Feature"
+                Translator:bind(FeatureButton, settings.title or "Feature")
                 FeatureButton.AutoButtonColor = false
                 FeatureButton.TextXAlignment = Enum.TextXAlignment.Left
                 FeatureButton.TextTransparency = 0.1
@@ -5452,6 +6033,7 @@ function Library:create_ui()
                 Button.Size = UDim2.new(1, 0, 1, 0)
                 Button.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
                 Button.Text = s.title
+                Translator:bind(Button, s.title)
                 Button.TextColor3 = Color3.fromRGB(200, 200, 200)
                 Button.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
                 Button.TextSize = 11

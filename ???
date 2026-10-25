@@ -1,4 +1,7 @@
- if not LPH_OBFUSCATED then
+--- hi
+
+
+if not LPH_OBFUSCATED then
     LPH_ENCFUNC = function(callback) return callback end
     LPH_NO_VIRTUALIZE = function(...) return ... end
     LPH_NO_UPVALUES = function(...) return ... end
@@ -174,7 +177,7 @@ local ShareCodec = {
 }
 do
     local BASE36 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    local FLAG_MODULUS = 2176782336 -- 36 ^ 6; safely exact with the multiplier below.
+    local FLAG_MODULUS = 2176782336
 
     function ShareCodec.encode_base36(value: number, minimum_width: number?)
         if type(value) ~= "number" or value ~= value or value < 0 or value == math.huge then
@@ -427,6 +430,9 @@ function AcrylicBlur:render(distance: number)
         positions.bottom_right = position + size
     end
     local function update()
+        if self._hidden then
+            return
+        end
         local top_left = positions.top_left
         local top_right = positions.top_right
         local bottom_right = positions.bottom_right
@@ -448,6 +454,7 @@ function AcrylicBlur:render(distance: number)
         update_positions(size, position)
         update()
     end
+    self._update = update
     local id = tostring(self)
     local function bind_camera()
         Connections.disconnect(Connections, 'cframe_update_' .. id)
@@ -479,7 +486,13 @@ function AcrylicBlur:check_quality_level()
     end)
 end
 function AcrylicBlur:change_visiblity(state: boolean)
-    self._root.Transparency = state and 0.98 or 1
+    self._hidden = not state
+    if self._root then
+        self._root.Transparency = state and 0.98 or 1
+    end
+    if state and self._update then
+        self._update()
+    end
 end
 function AcrylicBlur:destroy()
     local id = tostring(self)
@@ -871,7 +884,10 @@ function Config:list()
             local base = tostring(file):match("([^/\\]+)%.json$")
             local clean = base and self:sanitize(base)
             if clean and clean == base then
-                found[clean] = true
+                local content = fs_read(self:_path(clean))
+                if content == nil or content:match("%S") then
+                    found[clean] = true
+                end
             end
         end
         names = found
@@ -986,6 +1002,7 @@ local CODE_TO_NAME_MAP = {
     ["th"] = "Thai",
 }
 
+local Library
 local Translator = {
     _current_lang = "en",
     _selected_option = "Auto",
@@ -1282,6 +1299,24 @@ function Translator:bind(instance: Instance, raw_text: string?, property: string
     end
 end
 
+function Translator:rebind(instance: Instance, raw_text: string?)
+    for i = #self._bindings, 1, -1 do
+        if self._bindings[i].instance == instance then
+            if type(raw_text) == "string" and raw_text ~= "" then
+                self._bindings[i].raw = raw_text
+                self:apply_binding(self._bindings[i])
+            else
+                table.remove(self._bindings, i)
+            end
+            return true
+        end
+    end
+    if type(raw_text) == "string" and raw_text ~= "" then
+        self:bind(instance, raw_text)
+    end
+    return false
+end
+
 function Translator:set_language(option: string)
     self._selected_option = option or "Auto"
     local target_lang
@@ -1367,7 +1402,7 @@ function Translator:init(saved_option: string?)
     end)
 end
 
-local Library = {
+Library = {
     _config = Config:load(Config.active),
     _choosing_keybind = false,
     _device = nil,
@@ -1419,6 +1454,7 @@ local function resolve_library(self: any)
 end
 Library.__index = Library
 function Library.new()
+    pcall(Library.capture_luarmor, Library, 8)
     local self = setmetatable({
         _loaded = false,
         _tab = 0,
@@ -1426,6 +1462,7 @@ function Library.new()
         _keybind_order = Library._keybind_order,
         _ui_scale = 1,
     }, Library)
+    Library._previous_window = Library._current
     Library._current = self
     self:create_ui()
     return self
@@ -1452,22 +1489,26 @@ NotificationContainer.AnchorPoint = Vector2.new(1, 0)
 NotificationContainer.Position = UDim2.new(1, -10, 0, 10)
 NotificationContainer.BackgroundTransparency = 1
 NotificationContainer.ClipsDescendants = false;
-local notifParent = nil
+local notifParent = (gethui and gethui()) or CoreGui
+for _, child in ipairs(notifParent:GetChildren()) do
+    if child.Name == "PivotNotifications" and child:IsA("ScreenGui") then
+        child:Destroy()
+    end
+end
+local NotificationGui = Instance.new("ScreenGui")
+NotificationGui.Name = "PivotNotifications"
+NotificationGui.ResetOnSpawn = false
+NotificationGui.IgnoreGuiInset = true
+NotificationGui.DisplayOrder = 2147483646
+NotificationGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 pcall(function()
-    local robloxGui = game:GetService("CoreGui"):FindFirstChild("RobloxGui")
-    if robloxGui then
-        notifParent = robloxGui:FindFirstChild("RobloxCoreGuis")
-        if not notifParent then
-            local sg = Instance.new("ScreenGui")
-            sg.Name = "RobloxCoreGuis"
-            sg.Parent = robloxGui
-            notifParent = sg
-        end
+    local protect = protect_gui or protectgui or (syn and syn.protect_gui)
+    if protect then
+        protect(NotificationGui)
     end
 end)
-if not notifParent then
-    notifParent = (gethui and gethui()) or CoreGui
-end
+NotificationGui.Parent = notifParent
+notifParent = NotificationGui
 NotificationContainer.Parent = notifParent
 NotificationContainer.AutomaticSize = Enum.AutomaticSize.Y
 local NotificationUIScale = Instance.new("UIScale")
@@ -1683,8 +1724,37 @@ function Library:get_device()
     self._is_mobile = (device == 'Mobile') or UserInputService.TouchEnabled
 end
 function Library:removed(action: any)
-    self._ui.AncestryChanged:Once(action)
+    local gui = self._ui
+    if not gui then
+        return
+    end
+    local fired = false
+    local connection
+    local function run()
+        if fired then
+            return
+        end
+        fired = true
+        if connection then
+            connection:Disconnect()
+        end
+        action()
+    end
+    connection = gui.AncestryChanged:Connect(function(_, parent)
+        if parent == nil then
+            run()
+        end
+    end)
+    gui.Destroying:Once(run)
 end
+function Library:Destroy()
+    local lib = resolve_library(self)
+    Config:flush()
+    if lib._ui then
+        lib._ui:Destroy()
+    end
+end
+Library.Unload = Library.Destroy
 function Library:values_equal(left: any, right: any, seen: any?)
     if left == right then
         return true
@@ -1852,9 +1922,9 @@ function Library:set_keybind(flag: any, key_code: any)
     local key_name = resolve_canonical_key_name(key_code)
 
     if not key_name or key_name == "" or key_name == "Unknown" or key_name == "None" then
-        self._config._keybinds[flag] = nil
-        if lib and lib._config and lib._config._keybinds then lib._config._keybinds[flag] = nil end
-        if Library and Library._config and Library._config._keybinds then Library._config._keybinds[flag] = nil end
+        self._config._keybinds[flag] = "None"
+        if lib and lib._config and lib._config._keybinds then lib._config._keybinds[flag] = "None" end
+        if Library and Library._config and Library._config._keybinds then Library._config._keybinds[flag] = "None" end
         if lib._keybind_entries and lib._keybind_entries[flag] then
             lib._keybind_entries[flag].key_name = nil
         end
@@ -1969,8 +2039,6 @@ function Library:set_toggle_keybind(key_code: any)
         end
 
         self:_notify_keybind(f)
-        if lib and lib ~= self then lib:_notify_keybind(f) end
-        if Library and Library ~= self and Library ~= lib then Library:_notify_keybind(f) end
     end
 
     if self._config and self._config._flags then
@@ -1982,9 +2050,7 @@ function Library:set_toggle_keybind(key_code: any)
     if Library._config and Library._config._flags then
         Library._config._flags["ui_toggle_key"] = key_name
     end
-    if Library._boot_done then
-        Library._boot_toggle = key_name
-    end
+    Library._boot_toggle = key_name
 
     lib:update_keybind_list()
     Library:_persist_keybinds()
@@ -2035,7 +2101,7 @@ function Library:create_keybind(arg1: any, arg2: any)
     local flag = settings.flag or "keybind"
     local title = settings.title or tostring(flag)
     local default_key = settings.default or Enum.KeyCode.Unknown
-    if not Library:get_keybind_name(flag) and default_key and default_key ~= "Unknown" and default_key ~= Enum.KeyCode.Unknown then
+    if Library._config._keybinds[flag] == nil and default_key and default_key ~= "Unknown" and default_key ~= Enum.KeyCode.Unknown then
         Library:set_keybind(flag, default_key)
     end
     Library:register_keybind_entry(flag, title, function() return true end, nil, true)
@@ -2551,41 +2617,154 @@ Library.Luarmor = {
     overrides = {},
 }
 Library.script_version = Library.script_version or "3.0"
-function Library:set_luarmor_info(values: any)
-    if type(values) ~= "table" then
+local LRM_NAMES = { "LRM_IsUserPremium", "LRM_SecondsLeft", "LRM_TotalExecutions", "LRM_LinkedDiscordID", "LRM_UserNote", "LRM_ScriptName", "LRM_ScriptVersion" }
+local LRM_ALIASES = {
+    premium = "LRM_IsUserPremium", is_premium = "LRM_IsUserPremium", IsUserPremium = "LRM_IsUserPremium",
+    seconds_left = "LRM_SecondsLeft", SecondsLeft = "LRM_SecondsLeft",
+    executions = "LRM_TotalExecutions", total_executions = "LRM_TotalExecutions", TotalExecutions = "LRM_TotalExecutions",
+    discord_id = "LRM_LinkedDiscordID", LinkedDiscordID = "LRM_LinkedDiscordID",
+    note = "LRM_UserNote", UserNote = "LRM_UserNote",
+    script_name = "LRM_ScriptName", ScriptName = "LRM_ScriptName",
+    version = "LRM_ScriptVersion", script_version = "LRM_ScriptVersion", ScriptVersion = "LRM_ScriptVersion",
+}
+Library.Luarmor.captured = {}
+local function lrm_valid(value)
+    if value == nil then
+        return false
+    end
+    if type(value) == "string" and (value == "" or value:find("^LRM_")) then
+        return false
+    end
+    return true
+end
+local function lrm_from_status_data(data, out)
+    if type(data) ~= "table" then
         return
     end
-    for key, value in pairs(values) do
-        Library.Luarmor.overrides[key] = value
+    local expire = tonumber(data.auth_expire)
+    if expire then
+        if expire <= 0 then
+            out.LRM_SecondsLeft = out.LRM_SecondsLeft or math.huge
+        else
+            out.LRM_SecondsLeft = out.LRM_SecondsLeft or math.max(0, expire - os.time())
+        end
+    end
+    if out.LRM_TotalExecutions == nil and data.total_executions ~= nil then out.LRM_TotalExecutions = data.total_executions end
+    if out.LRM_LinkedDiscordID == nil and lrm_valid(data.discord_id) then out.LRM_LinkedDiscordID = data.discord_id end
+    if out.LRM_UserNote == nil and lrm_valid(data.note) then out.LRM_UserNote = data.note end
+end
+local function lrm_scan_table(tbl, out)
+    if type(tbl) ~= "table" then
+        return
+    end
+    for _, name in ipairs(LRM_NAMES) do
+        if out[name] == nil then
+            local ok, value = pcall(rawget, tbl, name)
+            if ok and lrm_valid(value) then
+                out[name] = value
+            end
+        end
     end
 end
+function Library:capture_luarmor(max_level: any)
+    local captured = Library.Luarmor.captured
+    if type(getfenv) == "function" then
+        for level = 2, tonumber(max_level) or 8 do
+            local ok, env = pcall(getfenv, level)
+            if not ok or type(env) ~= "table" then
+                break
+            end
+            lrm_scan_table(env, captured)
+            local ok_mt, mt = pcall(getmetatable, env)
+            if ok_mt and type(mt) == "table" and type(rawget(mt, "__index")) == "table" then
+                lrm_scan_table(rawget(mt, "__index"), captured)
+            end
+        end
+    end
+    return captured
+end
+function Library:refresh_profile()
+    local lib = Library._current or self
+    local label = lib and lib._profile_text
+    if not label or not label.Set then
+        return
+    end
+    local text, info = lib:_profile_lines()
+    pcall(function() label:Set({ text = text }) end)
+    if info.seconds_left ~= nil and not info.lifetime and lib._start_profile_timer then
+        lib._start_profile_timer()
+    end
+end
+function Library:set_luarmor_info(values: any, ...)
+    if type(values) ~= "table" then
+        local packed = table.pack(values, ...)
+        values = {}
+        for index, name in ipairs({ "LRM_IsUserPremium", "LRM_SecondsLeft", "LRM_TotalExecutions", "LRM_LinkedDiscordID", "LRM_UserNote", "LRM_ScriptVersion" }) do
+            if packed[index] ~= nil then
+                values[name] = packed[index]
+            end
+        end
+    end
+    for key, value in pairs(values) do
+        local name = LRM_ALIASES[key] or key
+        if lrm_valid(value) then
+            Library.Luarmor.overrides[name] = value
+        end
+    end
+    local version = Library.Luarmor.overrides.LRM_ScriptVersion
+    if version ~= nil then
+        Library.script_version = tostring(version)
+    end
+    Library:refresh_profile()
+end
+Library.SetLuarmorInfo = Library.set_luarmor_info
+Library.SetLuarmor = Library.set_luarmor_info
 function Library:set_script_version(version: any)
     if version ~= nil then
         Library.script_version = tostring(version)
+        Library:refresh_profile()
     end
 end
 function Library:get_luarmor_info()
     local env = getgenv()
-    local direct = {
-        LRM_IsUserPremium = LRM_IsUserPremium,
-        LRM_SecondsLeft = LRM_SecondsLeft,
-        LRM_TotalExecutions = LRM_TotalExecutions,
-        LRM_LinkedDiscordID = LRM_LinkedDiscordID,
-        LRM_UserNote = LRM_UserNote,
-        LRM_ScriptName = LRM_ScriptName,
-    }
+    local status_values = {}
+    if type(env) == "table" then
+        lrm_from_status_data(rawget(env, "PivotLuarmor"), status_values)
+    end
     local function read(name)
         local value = Library.Luarmor.overrides[name]
-        if value == nil then value = direct[name] end
-        if value == nil and type(env) == "table" then value = rawget(env, name) end
-        if value == nil then value = rawget(_G, name) end
+        if value == nil then value = Library.Luarmor.captured[name] end
+        if value == nil and type(env) == "table" then
+            local ok, v = pcall(rawget, env, name)
+            if ok and lrm_valid(v) then value = v end
+        end
+        if value == nil then
+            local ok, v = pcall(rawget, _G, name)
+            if ok and lrm_valid(v) then value = v end
+        end
+        if value == nil then value = status_values[name] end
         return value
     end
     local premium = read("LRM_IsUserPremium")
+    if premium == nil and type(env) == "table" and type(rawget(env, "PivotPremium")) == "boolean" then
+        premium = rawget(env, "PivotPremium")
+    end
+    if type(premium) == "number" then premium = premium ~= 0 end
+    if type(premium) == "string" then premium = premium == "true" or premium == "1" end
     local seconds = tonumber(read("LRM_SecondsLeft"))
-    local version = Library.script_version
-    if type(env) == "table" and env.PIVOT_VERSION ~= nil then
-        version = tostring(env.PIVOT_VERSION)
+    local expires_at = nil
+    if seconds and seconds ~= math.huge and seconds == seconds then
+        local cache = Library.Luarmor._expiry_cache
+        if not cache or cache.raw ~= seconds then
+            cache = { raw = seconds, at = os.time() + seconds }
+            Library.Luarmor._expiry_cache = cache
+        end
+        expires_at = cache.at
+        seconds = math.max(0, expires_at - os.time())
+    end
+    local version = read("LRM_ScriptVersion") or Library.script_version
+    if type(env) == "table" and rawget(env, "PIVOT_VERSION") ~= nil then
+        version = rawget(env, "PIVOT_VERSION")
     end
     local note = read("LRM_UserNote")
     local discord_id = read("LRM_LinkedDiscordID")
@@ -2595,12 +2774,12 @@ function Library:get_luarmor_info()
         premium_known = premium ~= nil,
         seconds_left = seconds,
         lifetime = seconds ~= nil and (seconds == math.huge or seconds > 3153600000),
-        expires_at = seconds and seconds ~= math.huge and (os.time() + seconds) or nil,
+        expires_at = expires_at,
         executions = tonumber(read("LRM_TotalExecutions")),
         discord_id = discord_id ~= nil and tostring(discord_id) or nil,
         note = note ~= nil and tostring(note) or nil,
         script_name = read("LRM_ScriptName"),
-        version = version,
+        version = tostring(version),
     }
 end
 function Library:format_time_left(seconds: any)
@@ -2638,8 +2817,13 @@ function Library:reset_saved_key()
     local env = getgenv()
     if type(env) == "table" then
         env.script_key = nil
+        env.ScriptKey = nil
+        env.PivotKeySystemLoaded = nil
     end
-    _G.script_key = nil
+    pcall(function()
+        _G.script_key = nil
+        _G.ScriptKey = nil
+    end)
     return removed
 end
 function Library:_profile_lines()
@@ -2714,24 +2898,36 @@ function Library:_build_profile_module(tab: any)
             self.SendNotification({ title = 'Profile', text = removed > 0 and 'Saved key removed. Re-execute to enter a new key.' or 'No saved key file found.', type = 'success', duration = 5 })
         end
     })
-    if info.seconds_left ~= nil and not info.lifetime then
+    local timer_running = false
+    self._start_profile_timer = function()
+        if timer_running then
+            return
+        end
+        timer_running = true
         task.spawn(function()
             local last = nil
             while self._ui and self._profile_text == Profile do
                 if self._ui_open ~= false then
-                    local new_text = self:_profile_lines()
+                    local new_text, now_info = self:_profile_lines()
                     if new_text ~= last then
                         last = new_text
                         pcall(function() Profile:Set({ text = new_text }) end)
                     end
+                    if now_info.seconds_left == nil or now_info.lifetime or now_info.seconds_left <= 0 then
+                        break
+                    end
                 end
                 task.wait(1)
             end
+            timer_running = false
         end)
+    end
+    if info.seconds_left ~= nil and not info.lifetime then
+        self._start_profile_timer()
     end
 end
 function Library:set_clipboard(text: string)
-    local fn = setclipboard or toclipboard or (syn and syn.write_clipboard)
+    local fn = (type(setclipboard) == "function" and setclipboard) or (type(toclipboard) == "function" and toclipboard) or (type(set_clipboard) == "function" and set_clipboard) or (type(syn) == "table" and type(syn.write_clipboard) == "function" and syn.write_clipboard) or (type(Clipboard) == "table" and type(Clipboard.set) == "function" and Clipboard.set)
     if fn then
         local success = pcall(fn, text)
         return success
@@ -2745,7 +2941,7 @@ function Library:clear_keybind(flag: any)
     end
     if lib._config and lib._config._keybinds then
         local had_keybind = self:get_keybind_name(flag) ~= nil
-        lib._config._keybinds[flag] = nil
+        lib._config._keybinds[flag] = "None"
         if lib._keybind_entries and lib._keybind_entries[flag] then
             lib._keybind_entries[flag].key_name = nil
         end
@@ -2755,6 +2951,7 @@ function Library:clear_keybind(flag: any)
         lib:update_keybind_list()
         Library:_persist_keybinds()
     end
+    return nil
 end
 function Library:keybind_matches(flag: any, input: InputObject)
     local key_name = self:get_keybind_name(flag)
@@ -2970,7 +3167,7 @@ function Library:begin_keybind_widget_capture(flag: any)
     Library._choosing_keybind = true
 
     local entry = lib._keybind_entries[flag]
-    local previous_key = Library:get_keybind_name(flag)
+    previous_key = Library:get_keybind_name(flag)
 
     local widget = lib._keybinds_widget or Library._keybinds_widget
     if widget then
@@ -2987,7 +3184,6 @@ function Library:begin_keybind_widget_capture(flag: any)
         pcall(entry.on_changed, "...", true)
     end
 
-    local connection_key = "keybind_widget_capture_" .. tostring(flag)
     Connections:disconnect(connection_key)
     Connections[connection_key] = UserInputService.InputBegan:Connect(function(input, processed)
         if processed then return end
@@ -3065,6 +3261,31 @@ function Library:unregister_keybind_entry(flag: any)
     lib:update_keybind_list()
 end
 function Library:create_ui()
+    for _, window in ipairs({ Library._previous_window, Library._current ~= self and Library._current or nil }) do
+        if window and window ~= self and window._ui then
+            pcall(function() window._ui:Destroy() end)
+        end
+    end
+    Library._previous_window = nil
+    for _, holder in ipairs({ (gethui and gethui()) or CoreGui, CoreGui }) do
+        pcall(function()
+            for _, gui in ipairs(holder:GetChildren()) do
+                if gui ~= self._ui and (gui:FindFirstChild('pivotSignature') or gui:FindFirstChild('RoniSignature')) then
+                    gui:Destroy()
+                end
+            end
+        end)
+    end
+    Library._current = self
+    Library._boot_keybinds = {}
+    for flag, value in pairs(Library._config._keybinds or {}) do
+        if type(value) == "string" then
+            Library._boot_keybinds[flag] = value
+        end
+    end
+    local saved_boot_toggle = Library._config._keybinds and Library._config._keybinds.ui_toggle_key
+    Library._boot_toggle = type(saved_boot_toggle) == "string" and saved_boot_toggle:gsub("^Enum%.KeyCode%.", "") or nil
+    Library._boot_done = false
     local old_Allusive = CoreGui:FindFirstChild('pivot') or CoreGui:FindFirstChild('roni')
     if old_Allusive then
         Debris:AddItem(old_Allusive, 0)
@@ -3090,14 +3311,6 @@ function Library:create_ui()
     else
         protect_gui(Allusive)
         Allusive.Parent = (gethui and gethui()) or CoreGui
-        local hooking = hookfunc or hookfunction
-        if hooking then
-            pcall(function()
-                hooking(ContentProvider.PreloadAsync, function(...) return 1 end)
-                hooking(ContentProvider.Preload, function(...) return 2 end)
-                hooking(ContentProvider.GetAssetFetchStatus, function(...) return 3 end)
-            end)
-        end
     end
     local Container = Instance.new('Frame')
     Container.ClipsDescendants = true
@@ -3377,18 +3590,17 @@ function Library:create_ui()
             end)
         end
     end)
-    UserInputService.InputChanged:Connect(function(input)
+    Connections:disconnect('keybinds_widget_drag')
+    Connections['keybinds_widget_drag'] = UserInputService.InputChanged:Connect(function(input)
         if kb_dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
             local scale = (self._ui_scale and self._ui_scale > 0) and self._ui_scale or 1
             local delta = (input.Position - kb_drag_start) / scale
-            TweenService:Create(KeybindsWidget, TweenInfo.new(0.15), {
-                Position = UDim2.new(
-                    kb_start_pos.X.Scale,
-                    kb_start_pos.X.Offset + delta.X,
-                    kb_start_pos.Y.Scale,
-                    kb_start_pos.Y.Offset + delta.Y
-                )
-            }):Play()
+            KeybindsWidget.Position = UDim2.new(
+                kb_start_pos.X.Scale,
+                kb_start_pos.X.Offset + delta.X,
+                kb_start_pos.Y.Scale,
+                kb_start_pos.Y.Offset + delta.Y
+            )
         end
     end)
 
@@ -3423,7 +3635,6 @@ function Library:create_ui()
             local ok, kc = pcall(function() return Enum.KeyCode[new_key] end)
             if ok and kc then
                 self:set_toggle_keybind(kc)
-                Config:save(game.GameId, self._config)
             end
         end
     end, true)
@@ -3486,6 +3697,25 @@ function Library:create_ui()
         self._ui = nil
         Config:flush()
         Connections:disconnect_all()
+        table.clear(Library._component_registry)
+        table.clear(Library._keybind_listeners)
+        table.clear(Library._active_dropdowns)
+        if self._keybind_entries then
+            table.clear(self._keybind_entries)
+        end
+        if self._keybind_order then
+            table.clear(self._keybind_order)
+        end
+        self._keybinds_widget = nil
+        self._keybinds_frame = nil
+        Library._keybinds_widget = nil
+        Library._keybinds_frame = nil
+        self._all_modules = nil
+        self._configs_tab_created = nil
+        self._last_category = nil
+        if Library._current == self then
+            Library._current = nil
+        end
     end)
     function self:Update1Run(a)
         if a == "nil" then
@@ -3860,28 +4090,44 @@ function Library:create_ui()
             end
         })
         Module:create_divider({ title = 'UI Settings', showtopic = true })
-        local initial_selected_key = (self:get_toggle_keycode()).Name
-        local toggle_dd = Module:create_dropdown({
-            title = 'Toggle Key',
-            flag = 'ui_toggle_key',
-            options = {'Insert', 'Home', 'End', 'Delete', 'RightShift', 'LeftAlt', 'RightAlt', 'RightControl', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9'},
-            default = initial_selected_key,
-            persist = true,
-            export = false,
-            callback = function(selected)
-                local ok, keyCode = pcall(function() return Enum.KeyCode[selected] end)
-                if ok and keyCode then
-                    self:set_toggle_keybind(keyCode)
-                    Config:save(game.GameId, self._config)
+        local BASE_TOGGLE_KEYS = {'Insert', 'Home', 'End', 'Delete', 'RightShift', 'LeftAlt', 'RightAlt', 'RightControl', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9'}
+        local function toggle_key_settings(current_key)
+            local options = table.clone(BASE_TOGGLE_KEYS)
+            if type(current_key) == 'string' and current_key ~= '' and not table.find(options, current_key) then
+                table.insert(options, current_key)
+            end
+            return {
+                title = 'Toggle Key',
+                flag = 'ui_toggle_key',
+                options = options,
+                default = current_key,
+                persist = true,
+                export = false,
+                callback = function(selected)
+                    local ok, keyCode = pcall(function() return Enum.KeyCode[selected] end)
+                    if ok and keyCode and keyCode ~= self:get_toggle_keycode() then
+                        self:set_toggle_keybind(keyCode)
+                    end
                 end
-            end
-        })
+            }
+        end
+        local toggle_dd_settings = toggle_key_settings((self:get_toggle_keycode()).Name)
+        local toggle_dd = Module:create_dropdown(toggle_dd_settings)
+        local syncing_toggle = false
         local function sync_toggle_dropdown(key_name)
-            if key_name and toggle_dd and toggle_dd.update then
-                pcall(function()
-                    toggle_dd:update(key_name, { persist = false, callback = false })
-                end)
+            if syncing_toggle or not key_name or not toggle_dd then
+                return
             end
+            syncing_toggle = true
+            pcall(function()
+                if not table.find(toggle_dd_settings.options, key_name) and toggle_dd.New then
+                    toggle_dd_settings = toggle_key_settings(key_name)
+                    toggle_dd = toggle_dd:New(toggle_dd_settings)
+                elseif toggle_dd.update then
+                    toggle_dd:update(key_name, { persist = false, callback = false })
+                end
+            end)
+            syncing_toggle = false
         end
         Library:register_keybind_listener('ui_toggle_key', sync_toggle_dropdown)
         Library:register_keybind_listener('minimize_bind', sync_toggle_dropdown)
@@ -3947,7 +4193,8 @@ function Library:create_ui()
             Pin.Position = UDim2.new(0.026, 0, 0, target_y)
         end
     end
-    Tabs:GetPropertyChangedSignal('CanvasPosition'):Connect(function()
+    Connections:disconnect('tabs_canvas_position')
+    Connections['tabs_canvas_position'] = Tabs:GetPropertyChangedSignal('CanvasPosition'):Connect(function()
         if self._update_pin_position then
             self._update_pin_position()
         end
@@ -4065,6 +4312,7 @@ function Library:create_ui()
         return Label
     end
     self.create_section_label = self.create_category
+    local Window = self
     function self:create_tab(title: string, icon: string, category: string?)
         if type(category) == "string" and category ~= "" then
             if category ~= self._last_category then
@@ -4258,8 +4506,8 @@ function Library:create_ui()
                 _size = 0,
                 _multiplier = 0
             }
-            self._all_modules = self._all_modules or {}
-            table.insert(self._all_modules, ModuleManager)
+            Window._all_modules = Window._all_modules or {}
+            table.insert(Window._all_modules, ModuleManager)
             local module_persistent = settings.persist ~= false
             local module_exportable = settings.export
             if module_exportable == nil then
@@ -4371,7 +4619,6 @@ function Library:create_ui()
             Description.TextXAlignment = Enum.TextXAlignment.Left
             Description.TextYAlignment = Enum.TextYAlignment.Top
             Description.TextWrapped = true
-            Description.TextTruncate = Enum.TextTruncate.AtEnd
             Description.BorderSizePixel = 0
             Description.BorderColor3 = Color3.fromRGB(0, 0, 0)
             Description.TextSize = 12
@@ -4455,7 +4702,11 @@ function Library:create_ui()
                             local rendered_h = (child.AbsoluteSize.Y > 0 and scale > 0) and math.round(child.AbsoluteSize.Y / scale) or 0
                             child_h = math.max(custom_scale, rendered_h)
                         else
-                            child_h = child.Size.Y.Offset > 0 and child.Size.Y.Offset or 24
+                            local rendered_h = (child.AbsoluteSize.Y > 0 and scale > 0) and math.round(child.AbsoluteSize.Y / scale) or 0
+                            child_h = math.max(child.Size.Y.Offset, rendered_h)
+                            if child_h <= 0 then
+                                child_h = 24
+                            end
                         end
                         total_h += child_h
                         visible_count += 1
@@ -4464,6 +4715,10 @@ function Library:create_ui()
 
                 if visible_count > 1 then
                     total_h += (visible_count - 1) * 2
+                end
+                local content_y = UIListLayout.AbsoluteContentSize.Y
+                if content_y > 0 and scale > 0 then
+                    total_h = math.max(total_h, math.ceil(content_y / scale) + 16)
                 end
 
                 return 72 + total_h
@@ -4484,6 +4739,17 @@ function Library:create_ui()
                 end
             end
             ModuleManager.sync_size = sync_module_size
+            local content_sync_queued = false
+            UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+                if content_sync_queued or not ModuleManager._state then
+                    return
+                end
+                content_sync_queued = true
+                task.defer(function()
+                    content_sync_queued = false
+                    sync_module_size(false)
+                end)
+            end)
             local function hook_child_signals(child)
                 if child:IsA("GuiObject") and child.Name ~= "UIPadding" then
                     child:GetPropertyChangedSignal("Visible"):Connect(function()
@@ -4573,6 +4839,7 @@ function Library:create_ui()
                 if opts.callback ~= false and settings.callback then
                     settings.callback(self._state)
                 end
+                return true
             end
             Library:register_flag(settings.flag, 'boolean', {
                 default = false,
@@ -4749,6 +5016,7 @@ function Library:create_ui()
                 end)
                 function TextManager:Set(new_settings)
                     local is_rich = new_settings.rich == true
+                    Translator:rebind(Body, nil)
                     Body.RichText = is_rich
                     if not is_rich then
                         Body.Text = new_settings.text or "" 
@@ -5126,7 +5394,7 @@ function Library:create_ui()
                     begin_component_keybind_capture(settings.flag, update_keybind_display)
                 end
                 KeybindButton.MouseButton1Click:Connect(begin_checkbox_keybind_capture)
-                if not Library:get_keybind_name(settings.flag) and settings.keybind and settings.keybind ~= "Unknown" then
+                if Library._config._keybinds[settings.flag] == nil and settings.keybind and settings.keybind ~= "Unknown" then
                     Library:set_keybind(settings.flag, settings.keybind)
                 end
                 update_keybind_display(Library:get_keybind_name(settings.flag))
@@ -5260,7 +5528,7 @@ function Library:create_ui()
                     if is_toggle and (Library:get_keybind_name("ui_toggle_key") or Library:get_keybind_name("minimize_bind") or Library:get_keybind_name("minimize")) then
                         local existing_key = Library:get_toggle_keycode()
                         Library:set_toggle_keybind(existing_key)
-                    elseif not Library:get_keybind_name(flag) then
+                    elseif Library._config._keybinds[flag] == nil then
                         Library:set_keybind(flag, default_key)
                     end
                 end
@@ -5988,8 +6256,8 @@ function Library:create_ui()
                             local is_sel = selected[option_text] == true
                             option_button.TextColor3 = is_sel and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(160, 160, 160)
                             option_button.TextTransparency = is_sel and 0 or 0.2
-                            option_button.BackgroundColor3 = is_sel and Color3.fromRGB(45, 80, 140) or Color3.fromRGB(28, 28, 28)
-                            option_button.BackgroundTransparency = is_sel and 0 or 1
+                            option_button.BackgroundColor3 = is_sel and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(28, 28, 28)
+                            option_button.BackgroundTransparency = is_sel and 0.92 or 1
                             if settings.multi_dropdown then
                                 option_button.Text = (is_sel and "  [✓] " or "  [ ] ") .. option_text
                             end
@@ -6071,7 +6339,7 @@ function Library:create_ui()
                         local is_sel = false
                         if settings.multi_dropdown then
                             for _, val in ipairs(DropdownManager._value or {}) do
-                                if val == option_data.text then is_sel = true break end
+                                if val == option_data.text then is_sel = true; break end
                             end
                         else
                             is_sel = DropdownManager._value == option_data.text
@@ -6088,7 +6356,7 @@ function Library:create_ui()
                         local is_sel = false
                         if settings.multi_dropdown then
                             for _, val in ipairs(DropdownManager._value or {}) do
-                                if val == option_data.text then is_sel = true break end
+                                if val == option_data.text then is_sel = true; break end
                             end
                         else
                             is_sel = DropdownManager._value == option_data.text
@@ -6233,7 +6501,7 @@ function Library:create_ui()
                         Library:set_keybind(settings.flag, saved_feature.BIND)
                     end
                 end
-                local checked = action_only and false or (migrated_checked ~= nil and migrated_checked or (typeof(saved_feature) == "boolean" and saved_feature or default_checked))
+                local checked = if action_only then false elseif migrated_checked ~= nil then migrated_checked elseif typeof(saved_feature) == "boolean" then saved_feature else default_checked
                 if not action_only then
                     Library:register_flag(settings.flag, 'boolean', {
                         default = default_checked,
@@ -6251,7 +6519,7 @@ function Library:create_ui()
                         keybind_export = keybind_export
                     })
                 end
-                if not Library:get_keybind_name(settings.flag) and settings.keybind and settings.keybind ~= "Unknown" then
+                if Library._config._keybinds[settings.flag] == nil and settings.keybind and settings.keybind ~= "Unknown" then
                     Library:set_keybind(settings.flag, settings.keybind)
                 end
                 local FeatureContainer = Instance.new("Frame")
@@ -6394,6 +6662,7 @@ function Library:create_ui()
                 end
                 local UseF_Var = nil;
                 if not action_only then
+                    local initial_checked = checked == true
                     local Checkbox = Instance.new("TextButton")
                     Checkbox.Size = UDim2.new(0, 32, 0, 18)
                     Checkbox.BackgroundColor3 = initial_checked and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(38, 38, 38)
@@ -6461,6 +6730,7 @@ function Library:create_ui()
                     Library:register_component(settings.flag, function(value, opts)
                         setChecked(value == true, opts)
                     end)
+                    checked = nil
                     setChecked(initial_checked, {
                         persist = false,
                         animate = false,
@@ -6984,7 +7254,7 @@ function Library:create_ui()
             }):Play()
             task.delay(0.12, function()
                 TweenService:Create(ToggleIcon, TweenInfo.new(0.15, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-                    Size = UDim2.new(0, 24, 0, 24)
+                    Size = UDim2.new(0, 26, 0, 26)
                 }):Play()
             end)
         end)

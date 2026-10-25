@@ -1,37 +1,20 @@
- 
-local _new_instance = Instance.new
-local _new_tween_info = TweenInfo.new
-local _new_udim = UDim.new
+ if not LPH_OBFUSCATED then
+    LPH_ENCFUNC = function(callback) return callback end
+    LPH_NO_VIRTUALIZE = function(...) return ... end
+    LPH_NO_UPVALUES = function(...) return ... end
+    LPH_JIT_MAX = function(...) return ... end
+    LPH_JIT = function(...) return ... end
+end
+
 local _new_udim2 = UDim2.new
-local _udim2_from_offset = UDim2.fromOffset
-local _new_vector2 = Vector2.new
-local _new_vector3 = Vector3.new
-local _new_color3 = Color3.new
-local _rgb = Color3.fromRGB
 
 local _clamp = math.clamp
-local _floor = math.floor
 local _max = math.max
 local _min = math.min
-local _abs = math.abs
-local _random = math.random
 
-local _clear = table.clear
-local _find = table.find
-local _insert = table.insert
-local _remove = table.remove
-local _concat = table.concat
 
-local _defer = task.defer
-local _delay = task.delay
-local _spawn = task.spawn
-local _wait = task.wait
 
-local _pairs = pairs
-local _ipairs = ipairs
 local _pcall = pcall
-local _tostring = tostring
-local _type = type
 
 local getgenv = getgenv or function() return _G end
 getgenv().GG = getgenv().GG or {}
@@ -39,17 +22,6 @@ GG.SelectedLanguage = GG.SelectedLanguage or "en"
 local SelectedLanguage = GG.SelectedLanguage
 local cloneref = cloneref or function(instance)
     return instance
-end
-function convertStringToTable(inputString)
-    local result = {}
-    for value in string.gmatch(inputString, "([^,]+)") do
-        local trimmedValue = value:match("^%s*(.-)%s*$")
-        _insert(result, trimmedValue)
-    end
-    return result
-end
-function convertTableToString(inputTable)
-    return _concat(inputTable, ", ")
 end
 local UserInputService = cloneref(game:GetService('UserInputService'))
 local ContentProvider = cloneref(game:GetService('ContentProvider'))
@@ -64,26 +36,6 @@ local CoreGui = cloneref(game:GetService('CoreGui'))
 local Debris = cloneref(game:GetService('Debris'))
 local LocalizationService = cloneref(game:GetService('LocalizationService'))
 
-local mouse = setmetatable({}, {
-    __index = function(_, key)
-        local ok, loc = _pcall(function()
-            return UserInputService:GetMouseLocation()
-        end)
-        local pos = (ok and loc) or Vector2.zero
-        if key == "X" or key == "x" then
-            return pos.X
-        elseif key == "Y" or key == "y" then
-            return pos.Y
-        elseif key == "Hit" or key == "hit" then
-            return CFrame.new(pos.X, pos.Y, 0)
-        elseif key == "Target" or key == "target" then
-            return nil
-        elseif key == "UnitRay" or key == "unitRay" then
-            return Ray.new(Vector3.zero, Vector3.zero)
-        end
-        return nil
-    end
-})
 for _, gui in pairs((gethui and gethui():GetChildren()) or CoreGui:GetChildren()) do
     if gui:FindFirstChild('pivotSignature') or gui:FindFirstChild('RoniSignature') then
         Debris:AddItem(gui, 0)
@@ -93,13 +45,68 @@ local old_Allusive = CoreGui:FindFirstChild('pivot') or CoreGui:FindFirstChild('
 if old_Allusive then
     Debris:AddItem(old_Allusive, 0)
 end
-if not isfolder("pivot") then
-    pcall(makefolder, "pivot")
+local function fs_isfile(path)
+    if type(isfile) ~= "function" then
+        return false
+    end
+    local ok, result = pcall(isfile, path)
+    return ok and result == true
 end
-local ConfigFolder = "pivot"
-if not isfolder(ConfigFolder) then
-    pcall(makefolder, ConfigFolder)
+local function fs_isfolder(path)
+    if type(isfolder) ~= "function" then
+        return false
+    end
+    local ok, result = pcall(isfolder, path)
+    return ok and result == true
 end
+local function fs_makefolder(path)
+    if type(makefolder) == "function" and not fs_isfolder(path) then
+        pcall(makefolder, path)
+    end
+end
+local function fs_read(path)
+    if type(readfile) ~= "function" or not fs_isfile(path) then
+        return nil
+    end
+    local ok, result = pcall(readfile, path)
+    if ok and type(result) == "string" then
+        return result
+    end
+    return nil
+end
+local function fs_write(path, content)
+    if type(writefile) ~= "function" then
+        return false, "writefile is not supported by this executor"
+    end
+    local ok, err = pcall(writefile, path, content)
+    if not ok then
+        return false, tostring(err)
+    end
+    return true
+end
+local function fs_delete(path)
+    if type(delfile) ~= "function" or not fs_isfile(path) then
+        return false
+    end
+    return (pcall(delfile, path))
+end
+local function fs_list(path)
+    if type(listfiles) ~= "function" or not fs_isfolder(path) then
+        return nil
+    end
+    local ok, result = pcall(listfiles, path)
+    if ok and type(result) == "table" then
+        return result
+    end
+    return nil
+end
+local PIVOT_ROOT = "Pivot"
+local GAME_KEY = tostring((game.GameId ~= 0 and game.GameId) or game.PlaceId)
+local ConfigFolder = PIVOT_ROOT .. "/configs/" .. GAME_KEY
+fs_makefolder(PIVOT_ROOT)
+fs_makefolder(PIVOT_ROOT .. "/configs")
+fs_makefolder(PIVOT_ROOT .. "/cache")
+fs_makefolder(ConfigFolder)
 local Connections = {}
 Connections.disconnect = function(self, connection)
     if not self[connection] then
@@ -582,7 +589,9 @@ end
 
 local Config = {
     VERSION = 5,
-    SAVE_DELAY = 0.2,
+    SAVE_DELAY = 0.4,
+    DEFAULT_NAME = "autosave",
+    active = "autosave",
     _batch_depth = 0,
     _batch_dirty = false,
     _last_encoded = {},
@@ -591,8 +600,26 @@ local Config = {
     _nonpersistent_flags = {},
 }
 
+function Config:sanitize(name: any)
+    if name == nil then
+        return nil
+    end
+    local clean = tostring(name):gsub("[^%w%s%-_%.]", ""):match("^%s*(.-)%s*$")
+    if clean == "" or #clean > 60 or clean:sub(1, 1) == "." then
+        return nil
+    end
+    return clean
+end
+
+function Config:_name(file_name: any)
+    if file_name == nil or type(file_name) == "number" or tostring(file_name) == tostring(game.GameId) then
+        return self.active
+    end
+    return self:sanitize(file_name) or self.active
+end
+
 function Config:_path(file_name: any)
-    return ConfigFolder .. "/" .. tostring(file_name) .. ".json"
+    return ConfigFolder .. "/" .. self:_name(file_name) .. ".json"
 end
 
 function Config:_persistable_copy(config: any)
@@ -602,13 +629,15 @@ function Config:_persistable_copy(config: any)
     copy._keybinds = type(copy._keybinds) == "table" and copy._keybinds or {}
     copy._library = type(copy._library) == "table" and copy._library or {}
     for flag in pairs(copy._flags) do
-        if type(flag) == "string" and (flag:sub(1, 11) == "pivot_cfg_" or flag:sub(1, 9) == "roni_cfg_" or self._nonpersistent_flags[flag] == true) then
+        if type(flag) == "string" and (flag:sub(1, 10) == "pivot_cfg_" or flag:sub(1, 9) == "roni_cfg_" or self._nonpersistent_flags[flag] == true) then
             copy._flags[flag] = nil
         end
     end
-    for flag in pairs(copy._keybinds) do
-        if type(flag) == "string" and (flag:sub(1, 11) == "pivot_cfg_" or flag:sub(1, 9) == "roni_cfg_") then
+    for flag, value in pairs(copy._keybinds) do
+        if type(flag) ~= "string" or flag:sub(1, 10) == "pivot_cfg_" or flag:sub(1, 9) == "roni_cfg_" then
             copy._keybinds[flag] = nil
+        elseif type(value) == "table" and type(value.enum) == "string" then
+            copy._keybinds[flag] = value.enum
         end
     end
     return copy
@@ -633,6 +662,42 @@ function Config:end_batch(file_name: any, config: any, force: boolean?)
     return self:save(file_name, config, force)
 end
 
+function Config:_index_path()
+    return ConfigFolder .. "/_index.txt"
+end
+
+function Config:_read_index()
+    local names = {}
+    local raw = fs_read(self:_index_path())
+    if raw then
+        for line in raw:gmatch("[^\r\n]+") do
+            local clean = self:sanitize(line)
+            if clean then
+                names[clean] = true
+            end
+        end
+    end
+    return names
+end
+
+function Config:_write_index(names: any)
+    local list = {}
+    for name in pairs(names) do
+        list[#list + 1] = name
+    end
+    table.sort(list)
+    fs_write(self:_index_path(), table.concat(list, "\n"))
+end
+
+function Config:_index_set(name: string, present: boolean)
+    local names = self:_read_index()
+    if (names[name] == true) == present then
+        return
+    end
+    names[name] = present or nil
+    self:_write_index(names)
+end
+
 function Config:save(file_name: any, config: any, force: boolean?)
     config = config or {}
     config._flags = type(config._flags) == "table" and config._flags or {}
@@ -643,32 +708,31 @@ function Config:save(file_name: any, config: any, force: boolean?)
         self._batch_dirty = true
         return true, "queued"
     end
-
-    local path = self:_path(file_name)
+    local name = self:_name(file_name)
+    local path = self:_path(name)
     local success_encode, encoded = pcall(function()
         return HttpService:JSONEncode(self:_persistable_copy(config))
     end)
     if not success_encode then
-        warn("failed to encode config", encoded)
         return false, tostring(encoded)
     end
-    if force ~= true and (self._last_encoded[path] == encoded or self._pending_encoded[path] == encoded) then
+    if self._last_encoded[path] == encoded and self._pending_encoded[path] == nil then
         return true, "unchanged"
-    end
-    local function write_encoded()
-        local success_save, save_error = pcall(function()
-            writefile(path, encoded)
-        end)
-        if not success_save then
-            warn("failed to save config", save_error)
-            return false, tostring(save_error)
-        end
-        self._last_encoded[path] = encoded
-        return true
     end
     self._write_generation[path] = (self._write_generation[path] or 0) + 1
     local generation = self._write_generation[path]
-    if force ~= true and type(task) == "table" and type(task.delay) == "function" then
+    local function write_encoded()
+        local ok, err = fs_write(path, encoded)
+        if not ok then
+            return false, err
+        end
+        self._last_encoded[path] = encoded
+        if name ~= self.DEFAULT_NAME then
+            self:_index_set(name, true)
+        end
+        return true
+    end
+    if force ~= true then
         self._pending_encoded[path] = encoded
         task.delay(self.SAVE_DELAY, function()
             if self._write_generation[path] ~= generation then
@@ -680,27 +744,28 @@ function Config:save(file_name: any, config: any, force: boolean?)
         return true, "queued"
     end
     self._pending_encoded[path] = nil
-    local success_save, save_error = write_encoded()
-    if not success_save then
-        return false, save_error
-    end
-    return true
+    return write_encoded()
 end
 
 function Config:flush(file_name: any)
-    local path = self:_path(file_name)
-    local encoded = self._pending_encoded[path]
-    if not encoded then
-        return true, "unchanged"
+    local targets = {}
+    if file_name ~= nil then
+        targets[self:_path(file_name)] = true
+    else
+        for path in pairs(self._pending_encoded) do
+            targets[path] = true
+        end
     end
-    self._write_generation[path] = (self._write_generation[path] or 0) + 1
-    self._pending_encoded[path] = nil
-    local success, write_error = pcall(writefile, path, encoded)
-    if not success then
-        warn("failed to flush config", write_error)
-        return false, tostring(write_error)
+    for path in pairs(targets) do
+        local encoded = self._pending_encoded[path]
+        if encoded then
+            self._write_generation[path] = (self._write_generation[path] or 0) + 1
+            self._pending_encoded[path] = nil
+            if fs_write(path, encoded) then
+                self._last_encoded[path] = encoded
+            end
+        end
     end
-    self._last_encoded[path] = encoded
     return true
 end
 
@@ -738,55 +803,127 @@ function Config:migrate(data: any, from_version: any)
     return data
 end
 
+function Config:_empty()
+    return { _version = self.VERSION, _flags = {}, _keybinds = {}, _library = {} }
+end
+
+function Config:exists(file_name: any)
+    return fs_isfile(self:_path(file_name))
+end
+
 function Config:load(file_name: any, default: any?)
-    local default_config = default or {
-        _version = self.VERSION,
-        _flags = {},
-        _keybinds = {},
-        _library = {},
-    }
-    local path = self:_path(file_name)
-    if not isfile(path) then
-        local legacy_path = "Allusive/" .. tostring(file_name) .. ".json"
-        local legacy_path2 = "roni/" .. tostring(file_name) .. ".json"
-        if isfile(legacy_path) then
-            path = legacy_path
-        elseif isfile(legacy_path2) then
-            path = legacy_path2
-        else
-            return deep_copy_deserialize(deep_copy_serialize(default_config))
+    local name = self:_name(file_name)
+    local path = self:_path(name)
+    local raw = fs_read(path)
+    local from_legacy = false
+    if not raw and name == self.DEFAULT_NAME then
+        local id = tostring(game.GameId)
+        for _, legacy in ipairs({ "pivot/" .. id .. ".json", "Allusive/" .. id .. ".json", "roni/" .. id .. ".json" }) do
+            raw = fs_read(legacy)
+            if raw then
+                from_legacy = true
+                break
+            end
         end
     end
-    local success_read, raw = pcall(readfile, path)
-    if not success_read or type(raw) ~= "string" then
-        warn("failed to read config", raw)
-        return deep_copy_deserialize(deep_copy_serialize(default_config))
+    if not raw or raw == "" then
+        return default and deep_copy_deserialize(deep_copy_serialize(default)) or self:_empty()
     end
     local success_decode, decoded = pcall(function()
         return HttpService:JSONDecode(raw)
     end)
     if not success_decode or type(decoded) ~= "table" then
-        warn("failed to load config (corrupt JSON):", decoded)
-        return deep_copy_deserialize(deep_copy_serialize(default_config))
+        return default and deep_copy_deserialize(deep_copy_serialize(default)) or self:_empty()
     end
     decoded = deep_copy_deserialize(decoded)
     decoded._flags = type(decoded._flags) == "table" and decoded._flags or {}
     decoded._keybinds = type(decoded._keybinds) == "table" and decoded._keybinds or {}
     decoded._library = type(decoded._library) == "table" and decoded._library or {}
-    local saved_version = decoded._version
-    if saved_version ~= self.VERSION then
-        local migrated, migration_error = self:migrate(decoded, saved_version)
+    for flag, value in pairs(decoded._keybinds) do
+        if typeof(value) == "EnumItem" then
+            decoded._keybinds[flag] = "Enum.KeyCode." .. value.Name
+        elseif type(value) ~= "string" then
+            decoded._keybinds[flag] = nil
+        end
+    end
+    if decoded._version ~= self.VERSION then
+        local migrated = self:migrate(decoded, decoded._version)
         if not migrated then
-            warn("failed to migrate config:", migration_error)
-            return deep_copy_deserialize(deep_copy_serialize(default_config))
+            return self:_empty()
         end
         decoded = migrated
-        self:save(file_name, decoded, true)
+        from_legacy = true
+    end
+    if from_legacy then
+        self:save(name, decoded, true)
     else
         self._last_encoded[path] = raw
     end
     return decoded
 end
+
+function Config:list()
+    local names = self:_read_index()
+    local files = fs_list(ConfigFolder)
+    if files then
+        local found = {}
+        for _, file in ipairs(files) do
+            local base = tostring(file):match("([^/\\]+)%.json$")
+            local clean = base and self:sanitize(base)
+            if clean and clean == base then
+                found[clean] = true
+            end
+        end
+        names = found
+    end
+    names[self.DEFAULT_NAME] = nil
+    local list = {}
+    for name in pairs(names) do
+        list[#list + 1] = name
+    end
+    table.sort(list, function(a, b) return a:lower() < b:lower() end)
+    return list
+end
+
+function Config:delete(file_name: any)
+    local name = self:sanitize(file_name)
+    if not name then
+        return false, "invalid config name"
+    end
+    local path = self:_path(name)
+    self._pending_encoded[path] = nil
+    self._write_generation[path] = (self._write_generation[path] or 0) + 1
+    self._last_encoded[path] = nil
+    local removed = fs_delete(path)
+    if not removed and fs_isfile(path) then
+        fs_write(path, "")
+    end
+    self:_index_set(name, false)
+    if self:get_autoload() == name then
+        self:set_autoload(nil)
+    end
+    if self.active == name then
+        self.active = self.DEFAULT_NAME
+    end
+    return true
+end
+
+function Config:get_autoload()
+    local raw = fs_read(ConfigFolder .. "/_autoload.txt")
+    local name = raw and self:sanitize(raw)
+    if name and (name == self.DEFAULT_NAME or fs_isfile(ConfigFolder .. "/" .. name .. ".json")) then
+        return name
+    end
+    return self.DEFAULT_NAME
+end
+
+function Config:set_autoload(file_name: any)
+    local name = self:sanitize(file_name) or self.DEFAULT_NAME
+    local ok, err = fs_write(ConfigFolder .. "/_autoload.txt", name)
+    return ok, err, name
+end
+
+Config.active = Config:get_autoload()
 
 local LANGUAGE_OPTIONS = {
     "Auto",
@@ -887,11 +1024,10 @@ function Translator:load_cache(lang: string)
     if self._cache_loaded[lang] then return end
     self._cache_loaded[lang] = true
     self._cache[lang] = self._cache[lang] or {}
-    if not isfile or not readfile then return end
-    local path = ConfigFolder .. "/translations_" .. tostring(lang) .. ".json"
-    if isfile(path) then
-        local ok, content = pcall(readfile, path)
-        if ok and type(content) == "string" and content ~= "" then
+    local path = PIVOT_ROOT .. "/cache/translations_" .. tostring(lang) .. ".json"
+    local content = fs_read(path)
+    if content and content ~= "" then
+        do
             local ok_dec, decoded = pcall(function() return HttpService:JSONDecode(content) end)
             if ok_dec and type(decoded) == "table" then
                 for k, v in pairs(decoded) do
@@ -905,18 +1041,16 @@ function Translator:load_cache(lang: string)
 end
 
 function Translator:save_cache(lang: string)
-    if not writefile or not self._cache[lang] or self._save_debounce[lang] then return end
+    if type(writefile) ~= "function" or not self._cache[lang] or self._save_debounce[lang] then return end
     self._save_debounce[lang] = true
     task.delay(1.5, function()
         self._save_debounce[lang] = nil
-        pcall(function()
-            if makefolder and isfolder and not isfolder(ConfigFolder) then
-                pcall(makefolder, ConfigFolder)
-            end
-            local path = ConfigFolder .. "/translations_" .. tostring(lang) .. ".json"
-            local encoded = HttpService:JSONEncode(self._cache[lang] or {})
-            writefile(path, encoded)
+        local ok, encoded = pcall(function()
+            return HttpService:JSONEncode(self._cache[lang] or {})
         end)
+        if ok then
+            fs_write(PIVOT_ROOT .. "/cache/translations_" .. tostring(lang) .. ".json", encoded)
+        end
     end)
 end
 
@@ -1234,7 +1368,7 @@ function Translator:init(saved_option: string?)
 end
 
 local Library = {
-    _config = Config:load(game.GameId),
+    _config = Config:load(Config.active),
     _choosing_keybind = false,
     _device = nil,
     _ui_open = true,
@@ -1263,6 +1397,18 @@ local Library = {
     Translator = Translator,
     LANGUAGE_OPTIONS = LANGUAGE_OPTIONS,
 }
+Library._boot_keybinds = {}
+for flag, value in pairs(Library._config._keybinds or {}) do
+    if type(value) == "string" then
+        Library._boot_keybinds[flag] = value
+    end
+end
+do
+    local saved_toggle = Library._config._keybinds and Library._config._keybinds.ui_toggle_key
+    if type(saved_toggle) == "string" then
+        Library._boot_toggle = saved_toggle:gsub("^Enum%.KeyCode%.", "")
+    end
+end
 local function resolve_library(self: any)
     if self and type(self) == "table" then
         if self._keybinds_widget or self._ui then
@@ -1579,7 +1725,7 @@ local function clone_config_value(value: any)
 end
 
 function Library:_is_internal_flag(flag: any)
-    return type(flag) == "string" and (self._internal_flags[flag] == true or flag:sub(1, 11) == "pivot_cfg_" or flag:sub(1, 9) == "roni_cfg_")
+    return type(flag) == "string" and (self._internal_flags[flag] == true or flag:sub(1, 10) == "pivot_cfg_" or flag:sub(1, 9) == "roni_cfg_")
 end
 
 function Library:register_flag(flag: any, expected_type: any, metadata: any?)
@@ -1717,6 +1863,7 @@ function Library:set_keybind(flag: any, key_code: any)
         end
         if previous ~= nil then self:_notify_keybind(flag) end
         lib:update_keybind_list()
+        Library:_persist_keybinds()
         return nil
     end
 
@@ -1735,6 +1882,7 @@ function Library:set_keybind(flag: any, key_code: any)
     if previous ~= key_name then self:_notify_keybind(flag) end
 
     lib:update_keybind_list()
+    Library:_persist_keybinds()
     return key_name
 end
 function Library:get_toggle_keycode()
@@ -1834,8 +1982,12 @@ function Library:set_toggle_keybind(key_code: any)
     if Library._config and Library._config._flags then
         Library._config._flags["ui_toggle_key"] = key_name
     end
+    if Library._boot_done then
+        Library._boot_toggle = key_name
+    end
 
     lib:update_keybind_list()
+    Library:_persist_keybinds()
     return key_name
 end
 local last_toggle_clock = 0
@@ -1895,6 +2047,7 @@ function Library:create_keybind(arg1: any, arg2: any)
                 settings.callback()
             end
         end)
+        Connections:disconnect("lib_keybind_press_" .. flag)
         Connections["lib_keybind_press_" .. flag] = keyPressConn
     end
     return {
@@ -1904,6 +2057,12 @@ function Library:create_keybind(arg1: any, arg2: any)
     }
 end
 function Library:load()
+end
+function Library:_persist_keybinds()
+    if self._suspend_keybind_save then
+        return
+    end
+    Config:save(game.GameId, Library._config, true)
 end
 function Library:register_component(flag: any, apply_fn: any)
     if not flag or type(apply_fn) ~= 'function' then
@@ -2301,97 +2460,275 @@ function Library:apply_config(flags: any, keybinds: any?, options: any?)
     }
 end
 function Library:_named_configs_path()
-    return ConfigFolder .. "/configs_" .. tostring(game.GameId) .. ".json"
-end
-function Library:_read_named_configs()
-    local path = self:_named_configs_path()
-    if not isfile(path) then
-        local legacy_path = "Allusive/configs_" .. tostring(game.GameId) .. ".json"
-        local legacy_path2 = "roni/configs_" .. tostring(game.GameId) .. ".json"
-        if isfile(legacy_path) then
-            path = legacy_path
-        elseif isfile(legacy_path2) then
-            path = legacy_path2
-        else
-            return {}, nil
-        end
-    end
-    local ok, raw = pcall(readfile, path)
-    if not ok or type(raw) ~= "string" or raw == "" then
-        return {}, "could not read named configs"
-    end
-    local decoded_ok, decoded = pcall(function()
-        return HttpService:JSONDecode(raw)
-    end)
-    if not decoded_ok or type(decoded) ~= "table" then
-        return {}, "named configs are corrupt"
-    end
-    decoded = deep_copy_deserialize(decoded)
-    local clean = {}
-    for name, entry in pairs(decoded) do
-        if type(name) == "string" and type(entry) == "table" and type(entry._flags) == "table" and (entry._keybinds == nil or type(entry._keybinds) == "table") then
-            clean[name] = {
-                _flags = deep_copy_serialize(entry._flags),
-                _keybinds = entry._keybinds and deep_copy_serialize(entry._keybinds) or {}
-            }
-        end
-    end
-    return clean, nil
-end
-function Library:_write_named_configs(data: any)
-    local ok, encoded = pcall(function()
-        return HttpService:JSONEncode(deep_copy_serialize(data or {}))
-    end)
-    if not ok then
-        return false, "failed to encode named configs"
-    end
-    local write_ok, write_error = pcall(function()
-        writefile(self:_named_configs_path(), encoded)
-    end)
-    if not write_ok then
-        warn('[pivot] failed to write named configs', write_error)
-        return false, tostring(write_error)
-    end
-    return true, nil
+    return ConfigFolder
 end
 function Library:get_named_config_names()
-    local map = self:_read_named_configs()
-    local names = {}
-    for name in pairs(map) do
-        table.insert(names, name)
+    return Config:list()
+end
+function Library:get_active_config()
+    return Config.active
+end
+function Library:get_autoload_config()
+    return Config:get_autoload()
+end
+function Library:set_autoload_config(name: any)
+    if name ~= nil and not Config:sanitize(name) then
+        return false, "invalid config name"
     end
-    table.sort(names, function(a, b) return a:lower() < b:lower() end)
-    return names
+    local ok, err, clean = Config:set_autoload(name)
+    if not ok then
+        return false, err
+    end
+    return true, clean
 end
 function Library:save_named_config(name: string)
-    if type(name) ~= "string" then return false, "config name must be a string" end
-    name = name:match("^%s*(.-)%s*$")
-    if name == "" or #name > 80 then return false, "config name is empty or too long" end
-    local map, read_error = self:_read_named_configs()
-    if read_error then return false, read_error end
-    map[name] = {
-        _version = 2,
-        _flags = self:_exportable_named_flags(),
-        _keybinds = self:_exportable_named_keybinds(),
-    }
-    return self:_write_named_configs(map)
+    local clean = Config:sanitize(name)
+    if not clean or clean == Config.DEFAULT_NAME then
+        return false, "config name is empty, too long or reserved"
+    end
+    Config:flush()
+    local ok, err = Config:save(clean, self._config, true)
+    if not ok then
+        return false, err
+    end
+    Config.active = clean
+    return true
 end
 function Library:load_named_config(name: string)
-    if type(name) ~= "string" then return false, "config name must be a string" end
-    local map, read_error = self:_read_named_configs()
-    if read_error then return false, read_error end
-    local entry = map[name]
-    if type(entry) ~= "table" or type(entry._flags) ~= "table" then return false, "named config was not found or is invalid" end
-    local result = self:apply_config(entry._flags, entry._keybinds or {}, { replace = true, source = "named" })
+    local clean = Config:sanitize(name)
+    if not clean then
+        return false, "config name must be a string"
+    end
+    if not Config:exists(clean) then
+        return false, "named config was not found"
+    end
+    Config:flush()
+    local data = Config:load(clean)
+    if type(data) ~= "table" or type(data._flags) ~= "table" then
+        return false, "named config is invalid"
+    end
+    Config.active = clean
+    local result = self:apply_config(data._flags, data._keybinds or {}, { replace = true, source = "named" })
+    local toggle = data._keybinds and data._keybinds.ui_toggle_key
+    if type(toggle) == "string" then
+        self:set_toggle_keybind(toggle)
+    end
+    Config:save(clean, self._config, true)
     return result.ok == true, result
 end
 function Library:delete_named_config(name: string)
-    if type(name) ~= "string" then return false, "config name must be a string" end
-    local map, read_error = self:_read_named_configs()
-    if read_error then return false, read_error end
-    if map[name] == nil then return false, "named config was not found" end
-    map[name] = nil
-    return self:_write_named_configs(map)
+    if Config:sanitize(name) == nil then
+        return false, "config name must be a string"
+    end
+    if not Config:exists(name) then
+        return false, "named config was not found"
+    end
+    return Config:delete(name)
+end
+
+local function hash_key_path(seed)
+    local bxor = bit32 and bit32.bxor
+    local parts = {}
+    for round = 1, 4 do
+        local h = (2166136261 + round * 16777619) % 4294967296
+        local input = seed .. "|" .. round
+        for i = 1, #input do
+            local b = input:byte(i)
+            h = bxor and bxor(h, b) or ((h + b) % 4294967296)
+            h = (h * 16777619) % 4294967296
+        end
+        parts[round] = string.format("%08x", h)
+    end
+    return table.concat(parts)
+end
+Library.Luarmor = {
+    get_key_url = "https://ads.luarmor.net/get_key?for=Get_key_RONI-TnHNauttLqCA",
+    discord = "discord.gg/pivothub",
+    key_files = {
+        "Pivot-KSY/" .. hash_key_path("Pivot-KSY|Pivot"),
+        "RONI/RONI_Key.txt",
+    },
+    overrides = {},
+}
+Library.script_version = Library.script_version or "3.0"
+function Library:set_luarmor_info(values: any)
+    if type(values) ~= "table" then
+        return
+    end
+    for key, value in pairs(values) do
+        Library.Luarmor.overrides[key] = value
+    end
+end
+function Library:set_script_version(version: any)
+    if version ~= nil then
+        Library.script_version = tostring(version)
+    end
+end
+function Library:get_luarmor_info()
+    local env = getgenv()
+    local direct = {
+        LRM_IsUserPremium = LRM_IsUserPremium,
+        LRM_SecondsLeft = LRM_SecondsLeft,
+        LRM_TotalExecutions = LRM_TotalExecutions,
+        LRM_LinkedDiscordID = LRM_LinkedDiscordID,
+        LRM_UserNote = LRM_UserNote,
+        LRM_ScriptName = LRM_ScriptName,
+    }
+    local function read(name)
+        local value = Library.Luarmor.overrides[name]
+        if value == nil then value = direct[name] end
+        if value == nil and type(env) == "table" then value = rawget(env, name) end
+        if value == nil then value = rawget(_G, name) end
+        return value
+    end
+    local premium = read("LRM_IsUserPremium")
+    local seconds = tonumber(read("LRM_SecondsLeft"))
+    local version = Library.script_version
+    if type(env) == "table" and env.PIVOT_VERSION ~= nil then
+        version = tostring(env.PIVOT_VERSION)
+    end
+    local note = read("LRM_UserNote")
+    local discord_id = read("LRM_LinkedDiscordID")
+    return {
+        available = premium ~= nil or seconds ~= nil,
+        premium = premium == true,
+        premium_known = premium ~= nil,
+        seconds_left = seconds,
+        lifetime = seconds ~= nil and (seconds == math.huge or seconds > 3153600000),
+        expires_at = seconds and seconds ~= math.huge and (os.time() + seconds) or nil,
+        executions = tonumber(read("LRM_TotalExecutions")),
+        discord_id = discord_id ~= nil and tostring(discord_id) or nil,
+        note = note ~= nil and tostring(note) or nil,
+        script_name = read("LRM_ScriptName"),
+        version = version,
+    }
+end
+function Library:format_time_left(seconds: any)
+    seconds = tonumber(seconds)
+    if not seconds then
+        return "Unknown"
+    end
+    if seconds == math.huge or seconds > 3153600000 then
+        return "Lifetime"
+    end
+    if seconds <= 0 then
+        return "Expired"
+    end
+    seconds = math.floor(seconds)
+    local d = math.floor(seconds / 86400)
+    local h = math.floor(seconds % 86400 / 3600)
+    local m = math.floor(seconds % 3600 / 60)
+    local s = seconds % 60
+    if d > 0 then
+        return string.format("%dd %02dh %02dm", d, h, m)
+    end
+    return string.format("%02dh %02dm %02ds", h, m, s)
+end
+function Library:reset_saved_key()
+    local removed = 0
+    for _, path in ipairs(Library.Luarmor.key_files) do
+        if fs_delete(path) then
+            removed += 1
+        elseif fs_isfile(path) then
+            if fs_write(path, "") then
+                removed += 1
+            end
+        end
+    end
+    local env = getgenv()
+    if type(env) == "table" then
+        env.script_key = nil
+    end
+    _G.script_key = nil
+    return removed
+end
+function Library:_profile_lines()
+    local info = self:get_luarmor_info()
+    local plan = info.premium_known and (info.premium and "Premium" or "Free") or "Unknown"
+    local expiry
+    if info.seconds_left == nil then
+        expiry = "Unknown"
+    elseif info.lifetime then
+        expiry = "Lifetime"
+    else
+        expiry = self:format_time_left(info.expires_at - os.time())
+    end
+    local lines = {
+        "Plan: " .. plan,
+        "Key expires in: " .. expiry,
+        "Executions: " .. (info.executions and tostring(info.executions) or "-"),
+        "Discord ID: " .. (info.discord_id or "Not linked"),
+        "Note: " .. ((info.note and info.note ~= "") and info.note or "-"),
+        "Version: " .. tostring(info.version),
+    }
+    return table.concat(lines, "\n"), info
+end
+function Library:_refresh_active_label()
+    local label = self._cfg_status_text
+    if label and label.Set then
+        pcall(function()
+            label:Set({ text = 'Active: ' .. tostring(Config.active) .. '  |  Autoload: ' .. tostring(Config:get_autoload()) })
+        end)
+    end
+end
+function Library:_build_profile_module(tab: any)
+    if not tab or not tab.create_module then
+        return
+    end
+    local Module = tab:create_module({
+        title = 'Profile',
+        description = 'Your Pivot key and account.',
+        flag = 'pivot_profile_module',
+        rich = false,
+        persist = false,
+        export = false,
+        section = 'right'
+    })
+    local text, info = self:_profile_lines()
+    local Profile = Module:create_text({ text = text })
+    self._profile_text = Profile
+    Module:create_feature({
+        title = 'Copy Get-Key Link',
+        flag = 'pivot_profile_key',
+        disablecheck = true,
+        button_callback = function()
+            local ok = self:set_clipboard(Library.Luarmor.get_key_url)
+            self.SendNotification({ title = 'Profile', text = ok and 'Get-Key link copied.' or Library.Luarmor.get_key_url, type = ok and 'success' or 'info', duration = 4 })
+        end
+    })
+    Module:create_feature({
+        title = 'Copy Discord',
+        flag = 'pivot_profile_discord',
+        disablecheck = true,
+        button_callback = function()
+            local ok = self:set_clipboard(Library.Luarmor.discord)
+            self.SendNotification({ title = 'Profile', text = ok and 'Discord invite copied.' or Library.Luarmor.discord, type = ok and 'success' or 'info', duration = 4 })
+        end
+    })
+    Module:create_feature({
+        title = 'Reset Saved Key',
+        flag = 'pivot_profile_reset',
+        disablecheck = true,
+        button_callback = function()
+            local removed = self:reset_saved_key()
+            self.SendNotification({ title = 'Profile', text = removed > 0 and 'Saved key removed. Re-execute to enter a new key.' or 'No saved key file found.', type = 'success', duration = 5 })
+        end
+    })
+    if info.seconds_left ~= nil and not info.lifetime then
+        task.spawn(function()
+            local last = nil
+            while self._ui and self._profile_text == Profile do
+                if self._ui_open ~= false then
+                    local new_text = self:_profile_lines()
+                    if new_text ~= last then
+                        last = new_text
+                        pcall(function() Profile:Set({ text = new_text }) end)
+                    end
+                end
+                task.wait(1)
+            end
+        end)
+    end
 end
 function Library:set_clipboard(text: string)
     local fn = setclipboard or toclipboard or (syn and syn.write_clipboard)
@@ -2416,6 +2753,7 @@ function Library:clear_keybind(flag: any)
             self:_notify_keybind(flag)
         end
         lib:update_keybind_list()
+        Library:_persist_keybinds()
     end
 end
 function Library:keybind_matches(flag: any, input: InputObject)
@@ -3146,6 +3484,7 @@ function Library:create_ui()
         end
         self._mobile_toggle_uiscale = nil
         self._ui = nil
+        Config:flush()
         Connections:disconnect_all()
     end)
     function self:Update1Run(a)
@@ -3225,6 +3564,27 @@ function Library:create_ui()
             self:load()
         end
     end)
+    task.delay(2, function()
+        local saved = Library._boot_toggle
+        Library._boot_done = true
+        if not self._ui then
+            return
+        end
+        if saved and self:get_toggle_keycode().Name ~= saved then
+            self:set_toggle_keybind(saved)
+        end
+        local boot = Library._boot_keybinds
+        if type(boot) == "table" then
+            Library._suspend_keybind_save = true
+            for flag, value in pairs(boot) do
+                if flag ~= "ui_toggle_key" and flag ~= "minimize_bind" and flag ~= "minimize" and Library._config._keybinds[flag] ~= value and type(value) == "string" then
+                    self:set_keybind(flag, value)
+                end
+            end
+            Library._suspend_keybind_save = false
+            Library:_persist_keybinds()
+        end
+    end)
     task.defer(function()
         local current_opt = Translator._selected_option or "Auto"
         if current_opt ~= "English" then
@@ -3248,6 +3608,8 @@ function Library:create_ui()
             'pivot_cfg_module', 'pivot_cfg_ui_settings',
             'pivot_cfg_save', 'pivot_cfg_load', 'pivot_cfg_delete',
             'pivot_cfg_export', 'pivot_cfg_import',
+            'pivot_cfg_refresh', 'pivot_cfg_autoload', 'pivot_cfg_autoload_clear', 'pivot_cfg_status',
+            'pivot_profile_module', 'pivot_profile_key', 'pivot_profile_discord', 'pivot_profile_reset',
             'roni_cfg_name', 'roni_cfg_code', 'roni_cfg_list',
             'roni_cfg_module', 'roni_cfg_ui_settings',
             'roni_cfg_save', 'roni_cfg_load', 'roni_cfg_delete',
@@ -3265,6 +3627,7 @@ function Library:create_ui()
             return fallback
         end
         local ConfigsTab = self:create_tab('Configs', CFG_ICON)
+        self:_build_profile_module(ConfigsTab)
         local Module = ConfigsTab:create_module({
             title = 'Config Manager',
             description = 'Save, load and share your configs.',
@@ -3302,6 +3665,7 @@ function Library:create_ui()
                     return
                 end
                 local names = self:get_named_config_names()
+                self:_refresh_active_label()
                 self._cfg_dropdown_mgr = self._cfg_dropdown_mgr:New({
                     Order = true,
                     title = 'Your Configs',
@@ -3320,6 +3684,7 @@ function Library:create_ui()
             persist = false,
             export = false
         })
+        self._cfg_status_text = Module:create_text({ text = 'Active: ' .. tostring(Config.active) .. '  |  Autoload: ' .. tostring(Config:get_autoload()) })
         Module:create_feature({
             title = 'Load',
             flag = 'pivot_cfg_load',
@@ -3331,6 +3696,7 @@ function Library:create_ui()
                     return
                 end
                 local ok, result = self:load_named_config(name)
+                self:_refresh_active_label()
                 if ok and (type(result) ~= 'table' or result.ok ~= false) then
                     self.SendNotification({ title = 'Configs', text = 'Loaded "' .. tostring(name) .. '".', type = 'success', duration = 4 })
                 else
@@ -3341,6 +3707,54 @@ function Library:create_ui()
                         duration = 5
                     })
                 end
+            end
+        })
+        local function rebuild_config_list()
+            self._cfg_dropdown_mgr = self._cfg_dropdown_mgr:New({
+                Order = true,
+                title = 'Your Configs',
+                flag = ListFlag,
+                options = self:get_named_config_names(),
+                persist = false,
+                export = false
+            })
+            self:_refresh_active_label()
+        end
+        Module:create_feature({
+            title = 'Refresh List',
+            flag = 'pivot_cfg_refresh',
+            disablecheck = true,
+            button_callback = function()
+                rebuild_config_list()
+            end
+        })
+        Module:create_feature({
+            title = 'Set Autoload',
+            flag = 'pivot_cfg_autoload',
+            disablecheck = true,
+            button_callback = function()
+                local name = self._config._flags[ListFlag]
+                if name == nil or name == "" then
+                    name = Config.active
+                end
+                local ok, result = self:set_autoload_config(name)
+                self:_refresh_active_label()
+                self.SendNotification({
+                    title = 'Configs',
+                    text = ok and ('"' .. tostring(result) .. '" will load on start.') or config_error_text(result, 'Could not set autoload.'),
+                    type = ok and 'success' or 'error',
+                    duration = 4
+                })
+            end
+        })
+        Module:create_feature({
+            title = 'Clear Autoload',
+            flag = 'pivot_cfg_autoload_clear',
+            disablecheck = true,
+            button_callback = function()
+                self:set_autoload_config(nil)
+                self:_refresh_active_label()
+                self.SendNotification({ title = 'Configs', text = 'Autoload reset to autosave.', type = 'success', duration = 4 })
             end
         })
         Module:create_feature({
@@ -3666,15 +4080,6 @@ function Library:create_ui()
         end
         local TabManager = { _title = title }
         local LayoutOrder = 0;
-        local font_params = Instance.new('GetTextBoundsParams')
-        font_params.Text = title
-        font_params.Font = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
-        font_params.Size = 13
-        font_params.Width = 10000
-        local font_size = Vector2.new(#title * 8, 13)
-        pcall(function()
-            font_size = TextService:GetTextBoundsAsync(font_params)
-        end)
         local first_tab = not Tabs:FindFirstChild('Tab')
         local Tab = Instance.new('TextButton')
         Tab.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Regular, Enum.FontStyle.Normal)
@@ -4958,6 +5363,7 @@ function Library:create_ui()
                         end
                     end
                 end)
+                Connections:disconnect("keybind_press_" .. flag)
                 Connections["keybind_press_" .. flag] = keyPressConn
                 register_managed_keybind_listener(flag, update_display, Row)
                 Library:register_keybind_entry(flag, title, function() return true end, update_display, true)

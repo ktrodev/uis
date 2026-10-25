@@ -1,11 +1,4 @@
-if not LPH_OBFUSCATED then
-    LPH_ENCFUNC = function(callback) return callback end
-    LPH_NO_VIRTUALIZE = function(...) return ... end
-    LPH_NO_UPVALUES = function(...) return ... end
-    LPH_JIT_MAX = function(...) return ... end
-    LPH_JIT = function(...) return ... end
-end
-
+ 
 local _new_instance = Instance.new
 local _new_tween_info = TweenInfo.new
 local _new_udim = UDim.new
@@ -1415,7 +1408,7 @@ function Library.SendNotification(settings)
     Translator:bind(Title, settings.title or "Notification Title")
     Title.TextColor3 = Color3.fromRGB(255, 255, 255)
     Title.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
-    Title.TextSize = 13
+    Title.TextSize = 14
     Title.Size = UDim2.new(1, 0, 0, 0)
     Title.BackgroundTransparency = 1
     Title.TextXAlignment = Enum.TextXAlignment.Left
@@ -2868,6 +2861,7 @@ function Library:create_ui()
     Pin.Size = UDim2.new(0, 3, 0, 18)
     Pin.BorderSizePixel = 0
     Pin.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    Pin.Visible = false
     Pin.Parent = Handler
     local UICorner = Instance.new('UICorner')
     UICorner.CornerRadius = UDim.new(1, 0)
@@ -3578,8 +3572,8 @@ function Library:create_ui()
                 BackgroundTransparency = 1
             }):Play()
             TweenService:Create(object.TextLabel, TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                TextTransparency = 0.45,
-                TextColor3 = Color3.fromRGB(180, 180, 180)
+                TextTransparency = 0,
+                TextColor3 = Color3.fromRGB(140, 140, 140)
             }):Play()
             if object.TextLabel:FindFirstChildWhichIsA('UIGradient') then
                 TweenService:Create(object.TextLabel.UIGradient, TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
@@ -3587,8 +3581,8 @@ function Library:create_ui()
                 }):Play()
             end
             TweenService:Create(object.Icon, TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                ImageTransparency = 0.55,
-                ImageColor3 = Color3.fromRGB(180, 180, 180)
+                ImageTransparency = 0,
+                ImageColor3 = Color3.fromRGB(140, 140, 140)
             }):Play()
         end
     end
@@ -3658,8 +3652,12 @@ function Library:create_ui()
     end
     self.create_section_label = self.create_category
     function self:create_tab(title: string, icon: string, category: string?)
-        if type(category) == "string" and category ~= "" and category ~= self._last_category then
-            self:create_category(category)
+        if type(category) == "string" and category ~= "" then
+            if category ~= self._last_category then
+                self:create_category(category)
+            end
+        elseif not self._last_category and title ~= "Configs" then
+            self:create_category("Main")
         end
         if type(icon) == "string" and TAB_ICON_ALIASES[icon:lower()] then
             icon = TAB_ICON_ALIASES[icon:lower()]
@@ -3698,7 +3696,8 @@ function Library:create_ui()
         local TextLabel = Instance.new('TextLabel')
         TextLabel.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
         TextLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-        TextLabel.TextTransparency = 0.45
+        TextLabel.TextTransparency = 0
+        TextLabel.TextColor3 = Color3.fromRGB(140, 140, 140)
         TextLabel.Text = title
         Translator:bind(TextLabel, title)
         TextLabel.Size = UDim2.new(1, -44, 0, 16)
@@ -3709,7 +3708,7 @@ function Library:create_ui()
         TextLabel.TextTruncate = Enum.TextTruncate.AtEnd
         TextLabel.BorderSizePixel = 0
         TextLabel.BorderColor3 = Color3.fromRGB(0, 0, 0)
-        TextLabel.TextSize = 13
+        TextLabel.TextSize = 14
         TextLabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
         TextLabel.Parent = Tab
         local UIGradient = Instance.new('UIGradient')
@@ -3722,7 +3721,8 @@ function Library:create_ui()
         UIGradient.Parent = TextLabel
         local Icon = Instance.new('ImageLabel')
         Icon.ScaleType = Enum.ScaleType.Fit
-        Icon.ImageTransparency = 0.55
+        Icon.ImageTransparency = 0
+        Icon.ImageColor3 = Color3.fromRGB(140, 140, 140)
         Icon.BorderColor3 = Color3.fromRGB(0, 0, 0)
         Icon.AnchorPoint = Vector2.new(0, 0.5)
         Icon.BackgroundTransparency = 1
@@ -3740,10 +3740,10 @@ function Library:create_ui()
                     BackgroundTransparency = 0.975
                 }):Play()
                 TweenService:Create(TextLabel, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                    TextTransparency = 0.2
+                    TextTransparency = 0
                 }):Play()
                 TweenService:Create(Icon, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                    ImageTransparency = 0.3
+                    ImageTransparency = 0
                 }):Play()
             end
         end)
@@ -3753,10 +3753,10 @@ function Library:create_ui()
                     BackgroundTransparency = 1
                 }):Play()
                 TweenService:Create(TextLabel, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                    TextTransparency = 0.45
+                    TextTransparency = 0
                 }):Play()
                 TweenService:Create(Icon, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                    ImageTransparency = 0.55
+                    ImageTransparency = 0
                 }):Play()
             end
         end)
@@ -3780,7 +3780,7 @@ function Library:create_ui()
         LeftSection.Visible = false
         LeftSection.Parent = Sections
         local UIListLayout = Instance.new('UIListLayout')
-        UIListLayout.Padding = UDim.new(0, 12)
+        UIListLayout.Padding = UDim.new(0, 10)
         UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
         UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
         UIListLayout.Parent = LeftSection
@@ -3810,7 +3810,7 @@ function Library:create_ui()
         RightSection.Visible = false
         RightSection.Parent = Sections
         local UIListLayout = Instance.new('UIListLayout')
-        UIListLayout.Padding = UDim.new(0, 12)
+        UIListLayout.Padding = UDim.new(0, 10)
         UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
         UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
         UIListLayout.Parent = RightSection
@@ -3871,7 +3871,7 @@ function Library:create_ui()
             Module.BackgroundTransparency = 0
             Module.Position = UDim2.new(0, 0, 0, 0)
             Module.Name = 'Module'
-            Module.Size = UDim2.new(0, 240, 0, 66)
+            Module.Size = UDim2.new(0, 240, 0, 72)
             Module.BorderSizePixel = 0
             Module.BackgroundColor3 = Color3.fromRGB(21, 21, 21)
             Module.Parent = settings.section
@@ -3897,7 +3897,7 @@ function Library:create_ui()
             Header.AutoButtonColor = false
             Header.BackgroundTransparency = 1
             Header.Name = 'Header'
-            Header.Size = UDim2.new(1, 0, 0, 66)
+            Header.Size = UDim2.new(1, 0, 0, 72)
             Header.BorderSizePixel = 0
             Header.TextSize = 14
             Header.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
@@ -3939,15 +3939,15 @@ function Library:create_ui()
                 ModuleName.Text = settings.richtext or "<font color='rgb(255,255,255)'>pivot</font> user"
             end;
             ModuleName.Name = 'ModuleName'
-            ModuleName.Size = UDim2.new(1, -72, 0, 15)
+            ModuleName.Size = UDim2.new(1, -72, 0, 18)
             ModuleName.AnchorPoint = Vector2.new(0, 0)
-            ModuleName.Position = UDim2.new(0, 16, 0, 15)
+            ModuleName.Position = UDim2.new(0, 16, 0, 16)
             ModuleName.BackgroundTransparency = 1
             ModuleName.TextXAlignment = Enum.TextXAlignment.Left
             ModuleName.TextTruncate = Enum.TextTruncate.AtEnd
             ModuleName.BorderSizePixel = 0
             ModuleName.BorderColor3 = Color3.fromRGB(0, 0, 0)
-            ModuleName.TextSize = 13
+            ModuleName.TextSize = 15
             ModuleName.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
             ModuleName.Parent = Header
             local Description = Instance.new('TextLabel')
@@ -3959,9 +3959,9 @@ function Library:create_ui()
                 Translator:bind(Description, settings.description)
             end
             Description.Name = 'Description'
-            Description.Size = UDim2.new(1, -72, 0, 26)
+            Description.Size = UDim2.new(1, -72, 0, 16)
             Description.AnchorPoint = Vector2.new(0, 0)
-            Description.Position = UDim2.new(0, 16, 0, 33)
+            Description.Position = UDim2.new(0, 16, 0, 38)
             Description.BackgroundTransparency = 1
             Description.TextXAlignment = Enum.TextXAlignment.Left
             Description.TextYAlignment = Enum.TextYAlignment.Top
@@ -3969,8 +3969,8 @@ function Library:create_ui()
             Description.TextTruncate = Enum.TextTruncate.AtEnd
             Description.BorderSizePixel = 0
             Description.BorderColor3 = Color3.fromRGB(0, 0, 0)
-            Description.TextSize = 11
-            Description.LineHeight = 1.05
+            Description.TextSize = 12
+            Description.TextTruncate = Enum.TextTruncate.AtEnd
             Description.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
             Description.Parent = Header
             local Toggle = Instance.new('Frame')
@@ -4012,7 +4012,7 @@ function Library:create_ui()
             local Options = Instance.new('Frame')
             Options.Name = 'Options'
             Options.BackgroundTransparency = 1
-            Options.Position = UDim2.new(0, 0, 0, 66)
+            Options.Position = UDim2.new(0, 0, 0, 72)
             Options.BorderColor3 = Color3.fromRGB(0, 0, 0)
             Options.Size = UDim2.new(1, 0, 0, 0)
             Options.AutomaticSize = Enum.AutomaticSize.Y
@@ -4021,11 +4021,11 @@ function Library:create_ui()
             Options.Visible = false
             Options.Parent = Module
             local UIPadding = Instance.new('UIPadding')
-            UIPadding.PaddingTop = UDim.new(0, 8)
-            UIPadding.PaddingBottom = UDim.new(0, 8)
+            UIPadding.PaddingTop = UDim.new(0, 6)
+            UIPadding.PaddingBottom = UDim.new(0, 10)
             UIPadding.Parent = Options
             local UIListLayout = Instance.new('UIListLayout')
-            UIListLayout.Padding = UDim.new(0, 8)
+            UIListLayout.Padding = UDim.new(0, 2)
             UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
             UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
             UIListLayout.Parent = Options
@@ -4043,7 +4043,7 @@ function Library:create_ui()
                             if target_attr and target_attr > 0 then
                                 child_h = target_attr
                             else
-                                child_h = child.Size.Y.Offset > 0 and child.Size.Y.Offset or 42
+                                child_h = child.Size.Y.Offset > 0 and child.Size.Y.Offset or 50
                             end
                         elseif child.Name == "Paragraph" or child.Name == "Text" then
                             local custom_scale = child:GetAttribute("CustomScale") or (child.Name == "Paragraph" and 70 or 50)
@@ -4058,10 +4058,10 @@ function Library:create_ui()
                 end
 
                 if visible_count > 1 then
-                    total_h += (visible_count - 1) * 8
+                    total_h += (visible_count - 1) * 2
                 end
 
-                return 66 + total_h
+                return 72 + total_h
             end
             local function sync_module_size(animate)
                 if not ModuleManager._state then
@@ -4122,7 +4122,7 @@ function Library:create_ui()
                     end
                 end
 
-                local target_height = self._state and get_expanded_height() or 66
+                local target_height = self._state and get_expanded_height() or 72
                 local module_size = UDim2.fromOffset(240, target_height)
                 local toggle_color = self._state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(38, 38, 38)
                 local circle_color = self._state and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(180, 180, 180)
@@ -4226,7 +4226,7 @@ function Library:create_ui()
                 Title.BackgroundTransparency = 1
                 Title.TextXAlignment = Enum.TextXAlignment.Left
                 Title.TextYAlignment = Enum.TextYAlignment.Center
-                Title.TextSize = 11
+                Title.TextSize = 14
                 Title.AutomaticSize = Enum.AutomaticSize.Y
                 Title.Parent = Paragraph
                 local Body = Instance.new('TextLabel')
@@ -4391,7 +4391,7 @@ function Library:create_ui()
                 Label.TextXAlignment = Enum.TextXAlignment.Left
                 Label.BorderSizePixel = 0
                 Label.Parent = Options
-                Label.TextSize = 11;
+                Label.TextSize = 13;
                 Label.LayoutOrder = LayoutOrderModule
                 local Textbox = Instance.new('TextBox')
                 Textbox.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Regular, Enum.FontStyle.Normal)
@@ -4403,7 +4403,7 @@ function Library:create_ui()
                 Textbox.Name = 'Textbox'
                 Textbox.Size = UDim2.new(0, 208, 0, 24)
                 Textbox.BorderSizePixel = 0
-                Textbox.TextSize = 11
+                Textbox.TextSize = 13
                 Textbox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
                 Textbox.BackgroundTransparency = 0
                 Textbox.ClearTextOnFocus = false
@@ -4594,7 +4594,7 @@ function Library:create_ui()
                 Checkbox.AutoButtonColor = false
                 Checkbox.BackgroundTransparency = 1
                 Checkbox.Name = "Checkbox"
-                Checkbox.Size = UDim2.new(0, 208, 0, 20)
+                Checkbox.Size = UDim2.new(0, 208, 0, 34)
                 Checkbox.BorderSizePixel = 0
                 Checkbox.Parent = Options
                 Checkbox.LayoutOrder = LayoutOrderModule
@@ -4602,15 +4602,16 @@ function Library:create_ui()
                 TitleLabel.Name = "TitleLabel"
                 if SelectedLanguage == "th" then
                     TitleLabel.FontFace = Font.new("rbxasset://fonts/families/NotoSansThai.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                    TitleLabel.TextSize = 12
+                    TitleLabel.TextSize = 14
                 else
                     TitleLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                    TitleLabel.TextSize = 11
+                    TitleLabel.TextSize = 14
                 end
-                TitleLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+                TitleLabel.TextColor3 = Color3.fromRGB(225, 225, 225)
                 TitleLabel.Text = settings.title or "Feature"
                 Translator:bind(TitleLabel, settings.title or "Feature")
                 TitleLabel.Size = UDim2.new(1, -75, 1, 0)
+                TitleLabel.TextTruncate = Enum.TextTruncate.AtEnd
                 TitleLabel.AnchorPoint = Vector2.new(0, 0.5)
                 TitleLabel.Position = UDim2.new(0, 2, 0.5, 0)
                 TitleLabel.BackgroundTransparency = 1
@@ -4630,6 +4631,7 @@ function Library:create_ui()
                 KeybindCorner.Parent = KeybindBox
                 local KBStroke = Instance.new("UIStroke")
                 KBStroke.Color = Color3.fromRGB(48, 48, 48)
+                KBStroke.Transparency = 1
                 KBStroke.Thickness = 1
                 KBStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
                 KBStroke.Parent = KeybindBox
@@ -4650,7 +4652,7 @@ function Library:create_ui()
                 KeybindLabel.BackgroundTransparency = 1
                 KeybindLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
                 KeybindLabel.TextScaled = false
-                KeybindLabel.TextSize = 10
+                KeybindLabel.TextSize = 11
                 KeybindLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
                 KeybindLabel.Visible = false
                 KeybindLabel.ZIndex = 2
@@ -4726,10 +4728,10 @@ function Library:create_ui()
                 local Box = Instance.new("Frame")
                 Box.BorderColor3 = Color3.fromRGB(0, 0, 0)
                 Box.AnchorPoint = Vector2.new(1, 0.5)
-                Box.BackgroundColor3 = initial_state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(40, 40, 40)
+                Box.BackgroundColor3 = initial_state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(38, 38, 38)
                 Box.Position = UDim2.new(1, 0, 0.5, 0)
                 Box.Name = "Box"
-                Box.Size = UDim2.new(0, 30, 0, 18)
+                Box.Size = UDim2.new(0, 32, 0, 18)
                 Box.BorderSizePixel = 0
                 Box.Parent = Checkbox
                 local UICorner = Instance.new("UICorner")
@@ -4758,7 +4760,7 @@ function Library:create_ui()
                         return false
                     end
                     self._state = next_state
-                    local box_color = next_state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(40, 40, 40)
+                    local box_color = next_state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(38, 38, 38)
                     local dot_position = next_state and UDim2.new(1, -15, 0.5, 0) or UDim2.new(0, 3, 0.5, 0)
                     local dot_color = next_state and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(180, 180, 180)
                     if opts.animate ~= false then
@@ -4860,7 +4862,7 @@ function Library:create_ui()
 
                 local Row = Instance.new("Frame")
                 Row.Name = "KeybindRow"
-                Row.Size = UDim2.new(0, 208, 0, 24)
+                Row.Size = UDim2.new(0, 208, 0, 34)
                 Row.BackgroundTransparency = 1
                 Row.Parent = Options
                 Row.LayoutOrder = LayoutOrderModule
@@ -4872,7 +4874,7 @@ function Library:create_ui()
                 Translator:bind(Title, title)
                 Title.TextColor3 = Color3.fromRGB(180, 180, 180)
                 Title.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                Title.TextSize = 12
+                Title.TextSize = 14
                 Title.TextXAlignment = Enum.TextXAlignment.Left
                 Title.TextTruncate = Enum.TextTruncate.AtEnd
                 Title.Parent = Row
@@ -4885,7 +4887,7 @@ function Library:create_ui()
                 KeyBtn.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
                 KeyBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
                 KeyBtn.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
-                KeyBtn.TextSize = 10
+                KeyBtn.TextSize = 11
                 KeyBtn.Text = ""
                 KeyBtn.AutoButtonColor = false
                 KeyBtn.BorderSizePixel = 0
@@ -4934,7 +4936,7 @@ function Library:create_ui()
                 update_display(Library:get_keybind_name(flag))
 
                 KeyBtn.MouseEnter:Connect(function()
-                    TweenService:Create(KeyBtn, TweenInfo.new(0.15), { BackgroundColor3 = Color3.fromRGB(40, 40, 40), TextColor3 = Color3.fromRGB(255, 255, 255) }):Play()
+                    TweenService:Create(KeyBtn, TweenInfo.new(0.15), { BackgroundColor3 = Color3.fromRGB(38, 38, 38), TextColor3 = Color3.fromRGB(255, 255, 255) }):Play()
                     TweenService:Create(Icon, TweenInfo.new(0.15), { ImageColor3 = Color3.fromRGB(255, 255, 255) }):Play()
                 end)
                 KeyBtn.MouseLeave:Connect(function()
@@ -4979,7 +4981,7 @@ function Library:create_ui()
                 end
                 self._size += (settings and settings.showtopic) and 26 or 14
                 local OuterFrame = Instance.new('Frame')
-                OuterFrame.Size = UDim2.new(0, 208, 0, (settings and settings.showtopic) and 20 or 8) 
+                OuterFrame.Size = UDim2.new(0, 208, 0, (settings and settings.showtopic) and 28 or 10) 
                 OuterFrame.BackgroundTransparency = 1 
                 OuterFrame.Name = 'OuterFrame'
                 OuterFrame.Parent = Options
@@ -5011,7 +5013,7 @@ function Library:create_ui()
                     TextLabel.TextXAlignment = Enum.TextXAlignment.Left
                     TextLabel.BorderSizePixel = 0
                     TextLabel.AnchorPoint = Vector2.new(0, 0.5)
-                    TextLabel.TextSize = 10
+                    TextLabel.TextSize = 11
                     TextLabel.ZIndex = 2
                     TextLabel.Parent = OuterFrame
                     local Pad = Instance.new('UIPadding')
@@ -5095,7 +5097,7 @@ function Library:create_ui()
                 Slider.AutoButtonColor = false
                 Slider.BackgroundTransparency = 1
                 Slider.Name = 'Slider'
-                Slider.Size = UDim2.new(0, 208, 0, 28)
+                Slider.Size = UDim2.new(0, 208, 0, 38)
                 Slider.BorderSizePixel = 0
                 Slider.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
                 Slider.Parent = Options
@@ -5103,15 +5105,15 @@ function Library:create_ui()
                 local TextLabel = Instance.new('TextLabel')
                 if GG.SelectedLanguage == "th" then
                     TextLabel.FontFace = Font.new("rbxasset://fonts/families/NotoSansThai.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                    TextLabel.TextSize = 12;
+                    TextLabel.TextSize = 14;
                 else
                     TextLabel.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                    TextLabel.TextSize = 11;
+                    TextLabel.TextSize = 14;
                 end;
                 TextLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
                 TextLabel.Text = settings.title
                 Translator:bind(TextLabel, settings.title)
-                TextLabel.Size = UDim2.new(1, -56, 0, 14)
+                TextLabel.Size = UDim2.new(1, -56, 0, 18)
                 TextLabel.Position = UDim2.new(0, 0, 0, 0)
                 TextLabel.BackgroundTransparency = 1
                 TextLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -5122,17 +5124,17 @@ function Library:create_ui()
                 Value.TextColor3 = Color3.fromRGB(255, 255, 255)
                 Value.Text = tostring(initial_value)
                 Value.Name = 'Value'
-                Value.Size = UDim2.new(0, 50, 0, 14)
+                Value.Size = UDim2.new(0, 50, 0, 18)
                 Value.AnchorPoint = Vector2.new(1, 0)
                 Value.Position = UDim2.new(1, 0, 0, 0)
                 Value.BackgroundTransparency = 1
                 Value.TextXAlignment = Enum.TextXAlignment.Right
                 Value.BorderSizePixel = 0
-                Value.TextSize = 11
+                Value.TextSize = 13
                 Value.Parent = Slider
                 local TrackButton = Instance.new('TextButton')
                 TrackButton.BackgroundTransparency = 1
-                TrackButton.Position = UDim2.new(0, 0, 0, 16)
+                TrackButton.Position = UDim2.new(0, 0, 0, 22)
                 TrackButton.Size = UDim2.new(1, 0, 0, 12)
                 TrackButton.Text = ''
                 TrackButton.AutoButtonColor = false
@@ -5142,9 +5144,9 @@ function Library:create_ui()
                 Drag.AnchorPoint = Vector2.new(0, 0.5)
                 Drag.Position = UDim2.new(0, 0, 0.5, 0)
                 Drag.Name = 'Drag'
-                Drag.Size = UDim2.new(1, 0, 0, 6)
+                Drag.Size = UDim2.new(1, 0, 0, 4)
                 Drag.BorderSizePixel = 0
-                Drag.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+                Drag.BackgroundColor3 = Color3.fromRGB(36, 36, 36)
                 Drag.Parent = TrackButton
                 local DragCorner = Instance.new('UICorner')
                 DragCorner.CornerRadius = UDim.new(1, 0)
@@ -5164,7 +5166,7 @@ function Library:create_ui()
                 Circle.AnchorPoint = Vector2.new(0.5, 0.5)
                 Circle.Name = 'Circle'
                 Circle.Position = UDim2.new(1, 0, 0.5, 0)
-                Circle.Size = UDim2.new(0, 12, 0, 12)
+                Circle.Size = UDim2.new(0, 10, 0, 10)
                 Circle.BorderSizePixel = 0
                 Circle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
                 Circle.Parent = Fill
@@ -5428,7 +5430,7 @@ function Library:create_ui()
                 Dropdown.AutoButtonColor = false
                 Dropdown.BackgroundTransparency = 1
                 Dropdown.Name = 'Dropdown'
-                Dropdown.Size = UDim2.new(0, 208, 0, 42)
+                Dropdown.Size = UDim2.new(0, 208, 0, 50)
                 Dropdown.BorderSizePixel = 0
                 Dropdown.Parent = Options
                 Dropdown:SetAttribute("TargetHeight", 42)
@@ -5440,16 +5442,16 @@ function Library:create_ui()
                 local TextLabel = Instance.new('TextLabel')
                 if GG.SelectedLanguage == "th" then
                     TextLabel.FontFace = Font.new("rbxasset://fonts/families/NotoSansThai.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                    TextLabel.TextSize = 12;
+                    TextLabel.TextSize = 14;
                 else
                     TextLabel.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Medium, Enum.FontStyle.Normal);
-                    TextLabel.TextSize = 11;
+                    TextLabel.TextSize = 14;
                 end;
                 TextLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
                 TextLabel.TextTransparency = 0.2
                 TextLabel.Text = settings.title
                 Translator:bind(TextLabel, settings.title)
-                TextLabel.Size = UDim2.new(1, 0, 0, 14)
+                TextLabel.Size = UDim2.new(1, 0, 0, 18)
                 TextLabel.BackgroundTransparency = 1
                 TextLabel.TextXAlignment = Enum.TextXAlignment.Left
                 TextLabel.BorderSizePixel = 0
@@ -5458,10 +5460,10 @@ function Library:create_ui()
                 Box.ClipsDescendants = true
                 Box.AnchorPoint = Vector2.new(0, 0)
                 Box.BackgroundTransparency = 0
-                Box.BackgroundColor3 = Color3.fromRGB(28, 28, 28)
-                Box.Position = UDim2.new(0, 0, 0, 18)
+                Box.BackgroundColor3 = Color3.fromRGB(27, 27, 27)
+                Box.Position = UDim2.new(0, 0, 0, 22)
                 Box.Name = 'Box'
-                Box.Size = UDim2.new(1, 0, 0, 24)
+                Box.Size = UDim2.new(1, 0, 0, 28)
                 Box.BorderSizePixel = 0
                 Box.Parent = Dropdown
                 local BoxCorner = Instance.new('UICorner')
@@ -5469,6 +5471,7 @@ function Library:create_ui()
                 BoxCorner.Parent = Box
                 local BoxStroke = Instance.new('UIStroke')
                 BoxStroke.Color = Color3.fromRGB(44, 44, 44)
+                BoxStroke.Transparency = 0.6
                 BoxStroke.Thickness = 1
                 BoxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
                 BoxStroke.Parent = Box
@@ -5477,7 +5480,7 @@ function Library:create_ui()
                 Header.BackgroundTransparency = 1
                 Header.Position = UDim2.new(0, 0, 0, 0)
                 Header.Name = 'Header'
-                Header.Size = UDim2.new(1, 0, 0, 24)
+                Header.Size = UDim2.new(1, 0, 0, 28)
                 Header.BorderSizePixel = 0
                 Header.Text = ''
                 Header.AutoButtonColor = false
@@ -5492,7 +5495,7 @@ function Library:create_ui()
                 CurrentOption.BackgroundTransparency = 1
                 CurrentOption.TextXAlignment = Enum.TextXAlignment.Left
                 CurrentOption.BorderSizePixel = 0
-                CurrentOption.TextSize = 11
+                CurrentOption.TextSize = 13
                 CurrentOption.TextTruncate = Enum.TextTruncate.AtEnd
                 CurrentOption.Parent = Header
                 local Arrow = Instance.new('ImageLabel')
@@ -5608,11 +5611,11 @@ function Library:create_ui()
                         Library:close_all_dropdowns(self)
                     end
                     self._state = not self._state
-                    local target_dropdown_h = self._state and (42 + self._size) or 42
-                    local target_box_h = self._state and (24 + self._size) or 24
+                    local target_dropdown_h = self._state and (50 + self._size) or 50
+                    local target_box_h = self._state and (28 + self._size) or 28
                     Dropdown:SetAttribute("TargetHeight", target_dropdown_h)
                     local target_h = get_expanded_height()
-                    local module_size = ModuleManager._state and UDim2.fromOffset(240, target_h) or UDim2.fromOffset(240, 66)
+                    local module_size = ModuleManager._state and UDim2.fromOffset(240, target_h) or UDim2.fromOffset(240, 72)
                     local dropdown_size = UDim2.fromOffset(208, target_dropdown_h)
                     local box_size = UDim2.new(1, 0, 0, target_box_h)
                     local arrow_rotation = self._state and 180 or 0
@@ -5642,7 +5645,7 @@ function Library:create_ui()
                     local Option = Instance.new('TextButton')
                     Option.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Medium, Enum.FontStyle.Normal)
                     Option.TextTransparency = 0.2
-                    Option.TextSize = 12
+                    Option.TextSize = 14
                     Option.Size = UDim2.new(1, 0, 0, 26)
                     Option.TextColor3 = Color3.fromRGB(160, 160, 160)
                     Option.BorderColor3 = Color3.fromRGB(0, 0, 0)
@@ -5846,7 +5849,7 @@ function Library:create_ui()
                     Library:set_keybind(settings.flag, settings.keybind)
                 end
                 local FeatureContainer = Instance.new("Frame")
-                FeatureContainer.Size = UDim2.new(0, 208, 0, 24)
+                FeatureContainer.Size = UDim2.new(0, 208, 0, 34)
                 FeatureContainer.BackgroundTransparency = 1
                 FeatureContainer.Parent = Options
                 FeatureContainer.LayoutOrder = LayoutOrderModule
@@ -5858,7 +5861,7 @@ function Library:create_ui()
                 UIListLayout.Parent = FeatureContainer
                 local FeatureButton = Instance.new("TextButton")
                 FeatureButton.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Medium, Enum.FontStyle.Normal);
-                FeatureButton.TextSize = 11;
+                FeatureButton.TextSize = 13;
                 FeatureButton.Size = UDim2.new(1, -96, 0, 22)
                 FeatureButton.BackgroundColor3 = Color3.fromRGB(28, 28, 28)
                 FeatureButton.TextColor3 = Color3.fromRGB(200, 200, 200)
@@ -5898,7 +5901,7 @@ function Library:create_ui()
                 KeybindBox.Size = UDim2.new(0, 24, 0, 20)
                 KeybindBox.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
                 KeybindBox.TextColor3 = Color3.fromRGB(180, 180, 180)
-                KeybindBox.TextSize = 10
+                KeybindBox.TextSize = 11
                 KeybindBox.Text = ""
                 KeybindBox.BackgroundTransparency = 0
                 KeybindBox.LayoutOrder = 1
@@ -5986,8 +5989,8 @@ function Library:create_ui()
                 local UseF_Var = nil;
                 if not action_only then
                     local Checkbox = Instance.new("TextButton")
-                    Checkbox.Size = UDim2.new(0, 30, 0, 18)
-                    Checkbox.BackgroundColor3 = initial_checked and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(40, 40, 40)
+                    Checkbox.Size = UDim2.new(0, 32, 0, 18)
+                    Checkbox.BackgroundColor3 = initial_checked and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(38, 38, 38)
                     Checkbox.Text = ""
                     Checkbox.AutoButtonColor = false
                     Checkbox.BorderSizePixel = 0
@@ -6019,7 +6022,7 @@ function Library:create_ui()
                             return false
                         end
                         checked = next_checked
-                        local checkbox_color = checked and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(40, 40, 40)
+                        local checkbox_color = checked and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(38, 38, 38)
                         local dot_position = checked and UDim2.new(1, -15, 0.5, 0) or UDim2.new(0, 3, 0.5, 0)
                         local dot_color = checked and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(180, 180, 180)
                         if opts.animate ~= false then
@@ -6170,7 +6173,7 @@ function Library:create_ui()
                 Translator:bind(Button, s.title)
                 Button.TextColor3 = Color3.fromRGB(200, 200, 200)
                 Button.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                Button.TextSize = 11
+                Button.TextSize = 13
                 Button.AutoButtonColor = false
                 Button.BorderSizePixel = 0
                 Button.ClipsDescendants = true
@@ -6188,7 +6191,7 @@ function Library:create_ui()
 
                 Button.MouseEnter:Connect(function()
                     TweenService:Create(Button, TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        BackgroundColor3 = Color3.fromRGB(40, 40, 40),
+                        BackgroundColor3 = Color3.fromRGB(38, 38, 38),
                         TextColor3 = Color3.fromRGB(255, 255, 255)
                     }):Play()
                     TweenService:Create(Stroke, TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
@@ -6212,7 +6215,7 @@ function Library:create_ui()
                     }):Play()
                     task.delay(0.08, function()
                         TweenService:Create(Button, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                            BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+                            BackgroundColor3 = Color3.fromRGB(38, 38, 38)
                         }):Play()
                     end)
                     pcall(cb)

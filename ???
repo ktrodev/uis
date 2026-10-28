@@ -1,7 +1,4 @@
---- hi
-
-
-if not LPH_OBFUSCATED then
+ if not LPH_OBFUSCATED then
     LPH_ENCFUNC = function(callback) return callback end
     LPH_NO_VIRTUALIZE = function(...) return ... end
     LPH_NO_UPVALUES = function(...) return ... end

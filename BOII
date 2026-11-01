@@ -1,4 +1,4 @@
-if not LPH_OBFUSCATED then
+ if not LPH_OBFUSCATED then
     LPH_ENCFUNC = function(callback) return callback end
     LPH_NO_VIRTUALIZE = function(...) return ... end
     LPH_NO_UPVALUES = function(...) return ... end
@@ -6,39 +6,15 @@ if not LPH_OBFUSCATED then
     LPH_JIT = function(...) return ... end
 end
 
-local _new_instance = Instance.new
-local _new_tween_info = TweenInfo.new
-local _new_udim = UDim.new
 local _new_udim2 = UDim2.new
-local _udim2_from_offset = UDim2.fromOffset
-local _new_vector2 = Vector2.new
-local _new_vector3 = Vector3.new
-local _new_color3 = Color3.new
-local _rgb = Color3.fromRGB
 
 local _clamp = math.clamp
-local _floor = math.floor
 local _max = math.max
 local _min = math.min
-local _abs = math.abs
-local _random = math.random
 
-local _clear = table.clear
-local _find = table.find
-local _insert = table.insert
-local _remove = table.remove
-local _concat = table.concat
 
-local _defer = task.defer
-local _delay = task.delay
-local _spawn = task.spawn
-local _wait = task.wait
 
-local _pairs = pairs
-local _ipairs = ipairs
 local _pcall = pcall
-local _tostring = tostring
-local _type = type
 
 local getgenv = getgenv or function() return _G end
 getgenv().GG = getgenv().GG or {}
@@ -46,17 +22,6 @@ GG.SelectedLanguage = GG.SelectedLanguage or "en"
 local SelectedLanguage = GG.SelectedLanguage
 local cloneref = cloneref or function(instance)
     return instance
-end
-function convertStringToTable(inputString)
-    local result = {}
-    for value in string.gmatch(inputString, "([^,]+)") do
-        local trimmedValue = value:match("^%s*(.-)%s*$")
-        _insert(result, trimmedValue)
-    end
-    return result
-end
-function convertTableToString(inputTable)
-    return _concat(inputTable, ", ")
 end
 local UserInputService = cloneref(game:GetService('UserInputService'))
 local ContentProvider = cloneref(game:GetService('ContentProvider'))
@@ -71,29 +36,6 @@ local CoreGui = cloneref(game:GetService('CoreGui'))
 local Debris = cloneref(game:GetService('Debris'))
 local LocalizationService = cloneref(game:GetService('LocalizationService'))
 
--- Identity 8 (CoreScript) Safe Mouse Handling (Angeli Architecture)
--- Never calls Players.LocalPlayer:GetMouse() which throws a permission error under Identity 8.
--- Instead, all mouse coordinates are queried directly via UserInputService:GetMouseLocation().
-local mouse = setmetatable({}, {
-    __index = function(_, key)
-        local ok, loc = _pcall(function()
-            return UserInputService:GetMouseLocation()
-        end)
-        local pos = (ok and loc) or Vector2.zero
-        if key == "X" or key == "x" then
-            return pos.X
-        elseif key == "Y" or key == "y" then
-            return pos.Y
-        elseif key == "Hit" or key == "hit" then
-            return CFrame.new(pos.X, pos.Y, 0)
-        elseif key == "Target" or key == "target" then
-            return nil
-        elseif key == "UnitRay" or key == "unitRay" then
-            return Ray.new(Vector3.zero, Vector3.zero)
-        end
-        return nil
-    end
-})
 for _, gui in pairs((gethui and gethui():GetChildren()) or CoreGui:GetChildren()) do
     if gui:FindFirstChild('pivotSignature') or gui:FindFirstChild('RoniSignature') then
         Debris:AddItem(gui, 0)
@@ -103,13 +45,68 @@ local old_Allusive = CoreGui:FindFirstChild('pivot') or CoreGui:FindFirstChild('
 if old_Allusive then
     Debris:AddItem(old_Allusive, 0)
 end
-if not isfolder("pivot") then
-    pcall(makefolder, "pivot")
+local function fs_isfile(path)
+    if type(isfile) ~= "function" then
+        return false
+    end
+    local ok, result = pcall(isfile, path)
+    return ok and result == true
 end
-local ConfigFolder = "pivot"
-if not isfolder(ConfigFolder) then
-    pcall(makefolder, ConfigFolder)
+local function fs_isfolder(path)
+    if type(isfolder) ~= "function" then
+        return false
+    end
+    local ok, result = pcall(isfolder, path)
+    return ok and result == true
 end
+local function fs_makefolder(path)
+    if type(makefolder) == "function" and not fs_isfolder(path) then
+        pcall(makefolder, path)
+    end
+end
+local function fs_read(path)
+    if type(readfile) ~= "function" or not fs_isfile(path) then
+        return nil
+    end
+    local ok, result = pcall(readfile, path)
+    if ok and type(result) == "string" then
+        return result
+    end
+    return nil
+end
+local function fs_write(path, content)
+    if type(writefile) ~= "function" then
+        return false, "writefile is not supported by this executor"
+    end
+    local ok, err = pcall(writefile, path, content)
+    if not ok then
+        return false, tostring(err)
+    end
+    return true
+end
+local function fs_delete(path)
+    if type(delfile) ~= "function" or not fs_isfile(path) then
+        return false
+    end
+    return (pcall(delfile, path))
+end
+local function fs_list(path)
+    if type(listfiles) ~= "function" or not fs_isfolder(path) then
+        return nil
+    end
+    local ok, result = pcall(listfiles, path)
+    if ok and type(result) == "table" then
+        return result
+    end
+    return nil
+end
+local PIVOT_ROOT = "Pivot"
+local GAME_KEY = tostring((game.GameId ~= 0 and game.GameId) or game.PlaceId)
+local ConfigFolder = PIVOT_ROOT .. "/configs/" .. GAME_KEY
+fs_makefolder(PIVOT_ROOT)
+fs_makefolder(PIVOT_ROOT .. "/configs")
+fs_makefolder(PIVOT_ROOT .. "/cache")
+fs_makefolder(ConfigFolder)
 local Connections = {}
 Connections.disconnect = function(self, connection)
     if not self[connection] then
@@ -177,7 +174,7 @@ local ShareCodec = {
 }
 do
     local BASE36 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-    local FLAG_MODULUS = 2176782336 -- 36 ^ 6; safely exact with the multiplier below.
+    local FLAG_MODULUS = 2176782336
 
     function ShareCodec.encode_base36(value: number, minimum_width: number?)
         if type(value) ~= "number" or value ~= value or value < 0 or value == math.huge then
@@ -430,6 +427,9 @@ function AcrylicBlur:render(distance: number)
         positions.bottom_right = position + size
     end
     local function update()
+        if self._hidden then
+            return
+        end
         local top_left = positions.top_left
         local top_right = positions.top_right
         local bottom_right = positions.bottom_right
@@ -451,6 +451,7 @@ function AcrylicBlur:render(distance: number)
         update_positions(size, position)
         update()
     end
+    self._update = update
     local id = tostring(self)
     local function bind_camera()
         Connections.disconnect(Connections, 'cframe_update_' .. id)
@@ -482,7 +483,13 @@ function AcrylicBlur:check_quality_level()
     end)
 end
 function AcrylicBlur:change_visiblity(state: boolean)
-    self._root.Transparency = state and 0.98 or 1
+    self._hidden = not state
+    if self._root then
+        self._root.Transparency = state and 0.98 or 1
+    end
+    if state and self._update then
+        self._update()
+    end
 end
 function AcrylicBlur:destroy()
     local id = tostring(self)
@@ -592,7 +599,9 @@ end
 
 local Config = {
     VERSION = 5,
-    SAVE_DELAY = 0.2,
+    SAVE_DELAY = 0.4,
+    DEFAULT_NAME = "autosave",
+    active = "autosave",
     _batch_depth = 0,
     _batch_dirty = false,
     _last_encoded = {},
@@ -601,8 +610,26 @@ local Config = {
     _nonpersistent_flags = {},
 }
 
+function Config:sanitize(name: any)
+    if name == nil then
+        return nil
+    end
+    local clean = tostring(name):gsub("[^%w%s%-_%.]", ""):match("^%s*(.-)%s*$")
+    if clean == "" or #clean > 60 or clean:sub(1, 1) == "." then
+        return nil
+    end
+    return clean
+end
+
+function Config:_name(file_name: any)
+    if file_name == nil or type(file_name) == "number" or tostring(file_name) == tostring(game.GameId) then
+        return self.active
+    end
+    return self:sanitize(file_name) or self.active
+end
+
 function Config:_path(file_name: any)
-    return ConfigFolder .. "/" .. tostring(file_name) .. ".json"
+    return ConfigFolder .. "/" .. self:_name(file_name) .. ".json"
 end
 
 function Config:_persistable_copy(config: any)
@@ -612,13 +639,15 @@ function Config:_persistable_copy(config: any)
     copy._keybinds = type(copy._keybinds) == "table" and copy._keybinds or {}
     copy._library = type(copy._library) == "table" and copy._library or {}
     for flag in pairs(copy._flags) do
-        if type(flag) == "string" and (flag:sub(1, 11) == "pivot_cfg_" or flag:sub(1, 9) == "roni_cfg_" or self._nonpersistent_flags[flag] == true) then
+        if type(flag) == "string" and (flag:sub(1, 10) == "pivot_cfg_" or flag:sub(1, 9) == "roni_cfg_" or self._nonpersistent_flags[flag] == true) then
             copy._flags[flag] = nil
         end
     end
-    for flag in pairs(copy._keybinds) do
-        if type(flag) == "string" and (flag:sub(1, 11) == "pivot_cfg_" or flag:sub(1, 9) == "roni_cfg_") then
+    for flag, value in pairs(copy._keybinds) do
+        if type(flag) ~= "string" or flag:sub(1, 10) == "pivot_cfg_" or flag:sub(1, 9) == "roni_cfg_" then
             copy._keybinds[flag] = nil
+        elseif type(value) == "table" and type(value.enum) == "string" then
+            copy._keybinds[flag] = value.enum
         end
     end
     return copy
@@ -643,6 +672,42 @@ function Config:end_batch(file_name: any, config: any, force: boolean?)
     return self:save(file_name, config, force)
 end
 
+function Config:_index_path()
+    return ConfigFolder .. "/_index.txt"
+end
+
+function Config:_read_index()
+    local names = {}
+    local raw = fs_read(self:_index_path())
+    if raw then
+        for line in raw:gmatch("[^\r\n]+") do
+            local clean = self:sanitize(line)
+            if clean then
+                names[clean] = true
+            end
+        end
+    end
+    return names
+end
+
+function Config:_write_index(names: any)
+    local list = {}
+    for name in pairs(names) do
+        list[#list + 1] = name
+    end
+    table.sort(list)
+    fs_write(self:_index_path(), table.concat(list, "\n"))
+end
+
+function Config:_index_set(name: string, present: boolean)
+    local names = self:_read_index()
+    if (names[name] == true) == present then
+        return
+    end
+    names[name] = present or nil
+    self:_write_index(names)
+end
+
 function Config:save(file_name: any, config: any, force: boolean?)
     config = config or {}
     config._flags = type(config._flags) == "table" and config._flags or {}
@@ -653,32 +718,31 @@ function Config:save(file_name: any, config: any, force: boolean?)
         self._batch_dirty = true
         return true, "queued"
     end
-
-    local path = self:_path(file_name)
+    local name = self:_name(file_name)
+    local path = self:_path(name)
     local success_encode, encoded = pcall(function()
         return HttpService:JSONEncode(self:_persistable_copy(config))
     end)
     if not success_encode then
-        warn("failed to encode config", encoded)
         return false, tostring(encoded)
     end
-    if force ~= true and (self._last_encoded[path] == encoded or self._pending_encoded[path] == encoded) then
+    if self._last_encoded[path] == encoded and self._pending_encoded[path] == nil then
         return true, "unchanged"
-    end
-    local function write_encoded()
-        local success_save, save_error = pcall(function()
-            writefile(path, encoded)
-        end)
-        if not success_save then
-            warn("failed to save config", save_error)
-            return false, tostring(save_error)
-        end
-        self._last_encoded[path] = encoded
-        return true
     end
     self._write_generation[path] = (self._write_generation[path] or 0) + 1
     local generation = self._write_generation[path]
-    if force ~= true and type(task) == "table" and type(task.delay) == "function" then
+    local function write_encoded()
+        local ok, err = fs_write(path, encoded)
+        if not ok then
+            return false, err
+        end
+        self._last_encoded[path] = encoded
+        if name ~= self.DEFAULT_NAME then
+            self:_index_set(name, true)
+        end
+        return true
+    end
+    if force ~= true then
         self._pending_encoded[path] = encoded
         task.delay(self.SAVE_DELAY, function()
             if self._write_generation[path] ~= generation then
@@ -690,27 +754,28 @@ function Config:save(file_name: any, config: any, force: boolean?)
         return true, "queued"
     end
     self._pending_encoded[path] = nil
-    local success_save, save_error = write_encoded()
-    if not success_save then
-        return false, save_error
-    end
-    return true
+    return write_encoded()
 end
 
 function Config:flush(file_name: any)
-    local path = self:_path(file_name)
-    local encoded = self._pending_encoded[path]
-    if not encoded then
-        return true, "unchanged"
+    local targets = {}
+    if file_name ~= nil then
+        targets[self:_path(file_name)] = true
+    else
+        for path in pairs(self._pending_encoded) do
+            targets[path] = true
+        end
     end
-    self._write_generation[path] = (self._write_generation[path] or 0) + 1
-    self._pending_encoded[path] = nil
-    local success, write_error = pcall(writefile, path, encoded)
-    if not success then
-        warn("failed to flush config", write_error)
-        return false, tostring(write_error)
+    for path in pairs(targets) do
+        local encoded = self._pending_encoded[path]
+        if encoded then
+            self._write_generation[path] = (self._write_generation[path] or 0) + 1
+            self._pending_encoded[path] = nil
+            if fs_write(path, encoded) then
+                self._last_encoded[path] = encoded
+            end
+        end
     end
-    self._last_encoded[path] = encoded
     return true
 end
 
@@ -748,55 +813,130 @@ function Config:migrate(data: any, from_version: any)
     return data
 end
 
+function Config:_empty()
+    return { _version = self.VERSION, _flags = {}, _keybinds = {}, _library = {} }
+end
+
+function Config:exists(file_name: any)
+    return fs_isfile(self:_path(file_name))
+end
+
 function Config:load(file_name: any, default: any?)
-    local default_config = default or {
-        _version = self.VERSION,
-        _flags = {},
-        _keybinds = {},
-        _library = {},
-    }
-    local path = self:_path(file_name)
-    if not isfile(path) then
-        local legacy_path = "Allusive/" .. tostring(file_name) .. ".json"
-        local legacy_path2 = "roni/" .. tostring(file_name) .. ".json"
-        if isfile(legacy_path) then
-            path = legacy_path
-        elseif isfile(legacy_path2) then
-            path = legacy_path2
-        else
-            return deep_copy_deserialize(deep_copy_serialize(default_config))
+    local name = self:_name(file_name)
+    local path = self:_path(name)
+    local raw = fs_read(path)
+    local from_legacy = false
+    if not raw and name == self.DEFAULT_NAME then
+        local id = tostring(game.GameId)
+        for _, legacy in ipairs({ "pivot/" .. id .. ".json", "Allusive/" .. id .. ".json", "roni/" .. id .. ".json" }) do
+            raw = fs_read(legacy)
+            if raw then
+                from_legacy = true
+                break
+            end
         end
     end
-    local success_read, raw = pcall(readfile, path)
-    if not success_read or type(raw) ~= "string" then
-        warn("failed to read config", raw)
-        return deep_copy_deserialize(deep_copy_serialize(default_config))
+    if not raw or raw == "" then
+        return default and deep_copy_deserialize(deep_copy_serialize(default)) or self:_empty()
     end
     local success_decode, decoded = pcall(function()
         return HttpService:JSONDecode(raw)
     end)
     if not success_decode or type(decoded) ~= "table" then
-        warn("failed to load config (corrupt JSON):", decoded)
-        return deep_copy_deserialize(deep_copy_serialize(default_config))
+        return default and deep_copy_deserialize(deep_copy_serialize(default)) or self:_empty()
     end
     decoded = deep_copy_deserialize(decoded)
     decoded._flags = type(decoded._flags) == "table" and decoded._flags or {}
     decoded._keybinds = type(decoded._keybinds) == "table" and decoded._keybinds or {}
     decoded._library = type(decoded._library) == "table" and decoded._library or {}
-    local saved_version = decoded._version
-    if saved_version ~= self.VERSION then
-        local migrated, migration_error = self:migrate(decoded, saved_version)
+    for flag, value in pairs(decoded._keybinds) do
+        if typeof(value) == "EnumItem" then
+            decoded._keybinds[flag] = "Enum.KeyCode." .. value.Name
+        elseif type(value) ~= "string" then
+            decoded._keybinds[flag] = nil
+        end
+    end
+    if decoded._version ~= self.VERSION then
+        local migrated = self:migrate(decoded, decoded._version)
         if not migrated then
-            warn("failed to migrate config:", migration_error)
-            return deep_copy_deserialize(deep_copy_serialize(default_config))
+            return self:_empty()
         end
         decoded = migrated
-        self:save(file_name, decoded, true)
+        from_legacy = true
+    end
+    if from_legacy then
+        self:save(name, decoded, true)
     else
         self._last_encoded[path] = raw
     end
     return decoded
 end
+
+function Config:list()
+    local names = self:_read_index()
+    local files = fs_list(ConfigFolder)
+    if files then
+        local found = {}
+        for _, file in ipairs(files) do
+            local base = tostring(file):match("([^/\\]+)%.json$")
+            local clean = base and self:sanitize(base)
+            if clean and clean == base then
+                local content = fs_read(self:_path(clean))
+                if content == nil or content:match("%S") then
+                    found[clean] = true
+                end
+            end
+        end
+        names = found
+    end
+    names[self.DEFAULT_NAME] = nil
+    local list = {}
+    for name in pairs(names) do
+        list[#list + 1] = name
+    end
+    table.sort(list, function(a, b) return a:lower() < b:lower() end)
+    return list
+end
+
+function Config:delete(file_name: any)
+    local name = self:sanitize(file_name)
+    if not name then
+        return false, "invalid config name"
+    end
+    local path = self:_path(name)
+    self._pending_encoded[path] = nil
+    self._write_generation[path] = (self._write_generation[path] or 0) + 1
+    self._last_encoded[path] = nil
+    local removed = fs_delete(path)
+    if not removed and fs_isfile(path) then
+        fs_write(path, "")
+    end
+    self:_index_set(name, false)
+    if self:get_autoload() == name then
+        self:set_autoload(nil)
+    end
+    if self.active == name then
+        self.active = self.DEFAULT_NAME
+    end
+    return true
+end
+
+function Config:get_autoload()
+    local raw = fs_read(ConfigFolder .. "/_autoload.txt")
+    local name = raw and self:sanitize(raw)
+    if name and (name == self.DEFAULT_NAME or fs_isfile(ConfigFolder .. "/" .. name .. ".json")) then
+        return name
+    end
+    return self.DEFAULT_NAME
+end
+
+function Config:set_autoload(file_name: any)
+    local name = self:sanitize(file_name) or self.DEFAULT_NAME
+    local ok, err = fs_write(ConfigFolder .. "/_autoload.txt", name)
+    return ok, err, name
+end
+
+Config.active = Config:get_autoload()
 
 local LANGUAGE_OPTIONS = {
     "Auto",
@@ -859,6 +999,7 @@ local CODE_TO_NAME_MAP = {
     ["th"] = "Thai",
 }
 
+local Library
 local Translator = {
     _current_lang = "en",
     _selected_option = "Auto",
@@ -897,11 +1038,10 @@ function Translator:load_cache(lang: string)
     if self._cache_loaded[lang] then return end
     self._cache_loaded[lang] = true
     self._cache[lang] = self._cache[lang] or {}
-    if not isfile or not readfile then return end
-    local path = ConfigFolder .. "/translations_" .. tostring(lang) .. ".json"
-    if isfile(path) then
-        local ok, content = pcall(readfile, path)
-        if ok and type(content) == "string" and content ~= "" then
+    local path = PIVOT_ROOT .. "/cache/translations_" .. tostring(lang) .. ".json"
+    local content = fs_read(path)
+    if content and content ~= "" then
+        do
             local ok_dec, decoded = pcall(function() return HttpService:JSONDecode(content) end)
             if ok_dec and type(decoded) == "table" then
                 for k, v in pairs(decoded) do
@@ -915,25 +1055,23 @@ function Translator:load_cache(lang: string)
 end
 
 function Translator:save_cache(lang: string)
-    if not writefile or not self._cache[lang] or self._save_debounce[lang] then return end
+    if type(writefile) ~= "function" or not self._cache[lang] or self._save_debounce[lang] then return end
     self._save_debounce[lang] = true
     task.delay(1.5, function()
         self._save_debounce[lang] = nil
-        pcall(function()
-            if makefolder and isfolder and not isfolder(ConfigFolder) then
-                pcall(makefolder, ConfigFolder)
-            end
-            local path = ConfigFolder .. "/translations_" .. tostring(lang) .. ".json"
-            local encoded = HttpService:JSONEncode(self._cache[lang] or {})
-            writefile(path, encoded)
+        local ok, encoded = pcall(function()
+            return HttpService:JSONEncode(self._cache[lang] or {})
         end)
+        if ok then
+            fs_write(PIVOT_ROOT .. "/cache/translations_" .. tostring(lang) .. ".json", encoded)
+        end
     end)
 end
 
 function Translator:request_http(url: string)
-    local req = request or http_request or (syn and syn.request) or (fluxus and fluxus.request)
+    local req = (typeof(request) == "function" and request) or (typeof(http_request) == "function" and http_request) or (syn and syn.request) or (fluxus and fluxus.request) or (http and http.request)
     if req then
-        local ok, res = pcall(req, { Url = url, Method = "GET" })
+        local ok, res = pcall(req, { Url = url, Method = "GET", Headers = { ["User-Agent"] = "Mozilla/5.0" } })
         if ok and res and (res.StatusCode == 200 or res.Status == 200 or res.Success) then
             return res.Body or res.body
         end
@@ -953,41 +1091,79 @@ function Translator:request_http(url: string)
     return nil
 end
 
+local TRANSLATE_PROVIDERS = {
+    function(self, text, lang)
+        local url = "https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=auto&tl=" .. HttpService:UrlEncode(lang) .. "&q=" .. HttpService:UrlEncode(text)
+        local body = self:request_http(url)
+        if type(body) ~= "string" or body:sub(1, 1) ~= "[" then return nil end
+        local ok, data = pcall(function() return HttpService:JSONDecode(body) end)
+        if not ok or type(data) ~= "table" then return nil end
+        local first = data[1]
+        if type(first) == "table" and type(first[1]) == "string" then return first[1] end
+        if type(first) == "string" then return first end
+        return nil
+    end,
+    function(self, text, lang)
+        local url = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=" .. HttpService:UrlEncode(lang) .. "&dt=t&q=" .. HttpService:UrlEncode(text)
+        local body = self:request_http(url)
+        if type(body) ~= "string" or body:sub(1, 1) ~= "[" then return nil end
+        local ok, data = pcall(function() return HttpService:JSONDecode(body) end)
+        if not ok or type(data) ~= "table" or type(data[1]) ~= "table" then return nil end
+        local combined = ""
+        for _, seg in ipairs(data[1]) do
+            if type(seg) == "table" and type(seg[1]) == "string" then
+                combined = combined .. seg[1]
+            end
+        end
+        return combined ~= "" and combined or nil
+    end,
+    function(self, text, lang)
+        local url = "https://api.mymemory.translated.net/get?q=" .. HttpService:UrlEncode(text) .. "&langpair=en%7C" .. HttpService:UrlEncode(lang)
+        local body = self:request_http(url)
+        if type(body) ~= "string" or body:sub(1, 1) ~= "{" then return nil end
+        local ok, data = pcall(function() return HttpService:JSONDecode(body) end)
+        if not ok or type(data) ~= "table" or data.quotaFinished == true then return nil end
+        local rd = data.responseData
+        if type(rd) == "table" and type(rd.translatedText) == "string" and rd.translatedText ~= "" and not rd.translatedText:find("MYMEMORY WARNING", 1, true) then
+            return rd.translatedText
+        end
+        return nil
+    end,
+}
+
+Translator._provider_fail = {}
+Translator._provider_cooldown = {}
+
 function Translator:translate_raw(text: string, target_lang: string, callback: any)
     if target_lang == "en" or text == "" or tonumber(text) ~= nil then
         callback(text)
         return
     end
-
+    for index, provider in ipairs(TRANSLATE_PROVIDERS) do
+        local until_time = self._provider_cooldown[index]
+        if not until_time or os.clock() >= until_time then
+            local ok, result = pcall(provider, self, text, target_lang)
+            if ok and type(result) == "string" and result ~= "" then
+                self._provider_fail[index] = 0
+                callback(result)
+                return
+            end
+            local fails = (self._provider_fail[index] or 0) + 1
+            self._provider_fail[index] = fails
+            if fails >= 3 then
+                self._provider_cooldown[index] = os.clock() + math.min(300, 20 * fails)
+            end
+        end
+    end
     if self._roblox_translator then
         local ok, roblox_res = pcall(function()
             return self._roblox_translator:Translate(game, text)
         end)
-        if ok and type(roblox_res) == "string" and roblox_res ~= "" and roblox_res ~= text then
+        if ok and type(roblox_res) == "string" and roblox_res ~= "" then
             callback(roblox_res)
             return
         end
     end
-
-    local encoded = HttpService:UrlEncode(text)
-    local url = string.format("https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=%s&dt=t&q=%s", target_lang, encoded)
-    local body = self:request_http(url)
-    if body and type(body) == "string" then
-        local ok, data = pcall(function() return HttpService:JSONDecode(body) end)
-        if ok and type(data) == "table" and type(data[1]) == "table" then
-            local combined = ""
-            for _, seg in ipairs(data[1]) do
-                if type(seg) == "table" and type(seg[1]) == "string" then
-                    combined = combined .. seg[1]
-                end
-            end
-            if combined ~= "" then
-                callback(combined)
-                return
-            end
-        end
-    end
-
     callback(text)
 end
 
@@ -997,6 +1173,12 @@ function Translator:process_queue()
     task.spawn(function()
         while #self._queue > 0 do
             local item = table.remove(self._queue, 1)
+            if item.lang ~= self._current_lang then
+                for _, cb in ipairs(item.callbacks) do
+                    pcall(cb, item.text)
+                end
+                continue
+            end
             local lang = item.lang
             local text = item.text
             self._cache[lang] = self._cache[lang] or {}
@@ -1014,7 +1196,7 @@ function Translator:process_queue()
                         pcall(cb, translated)
                     end
                 end)
-                task.wait(0.04)
+                task.wait(0.12)
             end
         end
         self._queue_active = false
@@ -1114,6 +1296,24 @@ function Translator:bind(instance: Instance, raw_text: string?, property: string
     end
 end
 
+function Translator:rebind(instance: Instance, raw_text: string?)
+    for i = #self._bindings, 1, -1 do
+        if self._bindings[i].instance == instance then
+            if type(raw_text) == "string" and raw_text ~= "" then
+                self._bindings[i].raw = raw_text
+                self:apply_binding(self._bindings[i])
+            else
+                table.remove(self._bindings, i)
+            end
+            return true
+        end
+    end
+    if type(raw_text) == "string" and raw_text ~= "" then
+        self:bind(instance, raw_text)
+    end
+    return false
+end
+
 function Translator:set_language(option: string)
     self._selected_option = option or "Auto"
     local target_lang
@@ -1199,8 +1399,8 @@ function Translator:init(saved_option: string?)
     end)
 end
 
-local Library = {
-    _config = Config:load(game.GameId),
+Library = {
+    _config = Config:load(Config.active),
     _choosing_keybind = false,
     _device = nil,
     _ui_open = true,
@@ -1229,6 +1429,18 @@ local Library = {
     Translator = Translator,
     LANGUAGE_OPTIONS = LANGUAGE_OPTIONS,
 }
+Library._boot_keybinds = {}
+for flag, value in pairs(Library._config._keybinds or {}) do
+    if type(value) == "string" then
+        Library._boot_keybinds[flag] = value
+    end
+end
+do
+    local saved_toggle = Library._config._keybinds and Library._config._keybinds.ui_toggle_key
+    if type(saved_toggle) == "string" then
+        Library._boot_toggle = saved_toggle:gsub("^Enum%.KeyCode%.", "")
+    end
+end
 local function resolve_library(self: any)
     if self and type(self) == "table" then
         if self._keybinds_widget or self._ui then
@@ -1239,6 +1451,7 @@ local function resolve_library(self: any)
 end
 Library.__index = Library
 function Library.new()
+    pcall(Library.capture_luarmor, Library, 8)
     local self = setmetatable({
         _loaded = false,
         _tab = 0,
@@ -1246,6 +1459,7 @@ function Library.new()
         _keybind_order = Library._keybind_order,
         _ui_scale = 1,
     }, Library)
+    Library._previous_window = Library._current
     Library._current = self
     self:create_ui()
     return self
@@ -1272,22 +1486,26 @@ NotificationContainer.AnchorPoint = Vector2.new(1, 0)
 NotificationContainer.Position = UDim2.new(1, -10, 0, 10)
 NotificationContainer.BackgroundTransparency = 1
 NotificationContainer.ClipsDescendants = false;
-local notifParent = nil
+local notifParent = (gethui and gethui()) or CoreGui
+for _, child in ipairs(notifParent:GetChildren()) do
+    if child.Name == "PivotNotifications" and child:IsA("ScreenGui") then
+        child:Destroy()
+    end
+end
+local NotificationGui = Instance.new("ScreenGui")
+NotificationGui.Name = "PivotNotifications"
+NotificationGui.ResetOnSpawn = false
+NotificationGui.IgnoreGuiInset = true
+NotificationGui.DisplayOrder = 2147483646
+NotificationGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 pcall(function()
-    local robloxGui = game:GetService("CoreGui"):FindFirstChild("RobloxGui")
-    if robloxGui then
-        notifParent = robloxGui:FindFirstChild("RobloxCoreGuis")
-        if not notifParent then
-            local sg = Instance.new("ScreenGui")
-            sg.Name = "RobloxCoreGuis"
-            sg.Parent = robloxGui
-            notifParent = sg
-        end
+    local protect = protect_gui or protectgui or (syn and syn.protect_gui)
+    if protect then
+        protect(NotificationGui)
     end
 end)
-if not notifParent then
-    notifParent = (gethui and gethui()) or CoreGui
-end
+NotificationGui.Parent = notifParent
+notifParent = NotificationGui
 NotificationContainer.Parent = notifParent
 NotificationContainer.AutomaticSize = Enum.AutomaticSize.Y
 local NotificationUIScale = Instance.new("UIScale")
@@ -1374,7 +1592,7 @@ function Library.SendNotification(settings)
     Translator:bind(Title, settings.title or "Notification Title")
     Title.TextColor3 = Color3.fromRGB(255, 255, 255)
     Title.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
-    Title.TextSize = 13
+    Title.TextSize = 14
     Title.Size = UDim2.new(1, 0, 0, 0)
     Title.BackgroundTransparency = 1
     Title.TextXAlignment = Enum.TextXAlignment.Left
@@ -1503,8 +1721,37 @@ function Library:get_device()
     self._is_mobile = (device == 'Mobile') or UserInputService.TouchEnabled
 end
 function Library:removed(action: any)
-    self._ui.AncestryChanged:Once(action)
+    local gui = self._ui
+    if not gui then
+        return
+    end
+    local fired = false
+    local connection
+    local function run()
+        if fired then
+            return
+        end
+        fired = true
+        if connection then
+            connection:Disconnect()
+        end
+        action()
+    end
+    connection = gui.AncestryChanged:Connect(function(_, parent)
+        if parent == nil then
+            run()
+        end
+    end)
+    gui.Destroying:Once(run)
 end
+function Library:Destroy()
+    local lib = resolve_library(self)
+    Config:flush()
+    if lib._ui then
+        lib._ui:Destroy()
+    end
+end
+Library.Unload = Library.Destroy
 function Library:values_equal(left: any, right: any, seen: any?)
     if left == right then
         return true
@@ -1545,7 +1792,7 @@ local function clone_config_value(value: any)
 end
 
 function Library:_is_internal_flag(flag: any)
-    return type(flag) == "string" and (self._internal_flags[flag] == true or flag:sub(1, 11) == "pivot_cfg_" or flag:sub(1, 9) == "roni_cfg_")
+    return type(flag) == "string" and (self._internal_flags[flag] == true or flag:sub(1, 10) == "pivot_cfg_" or flag:sub(1, 9) == "roni_cfg_")
 end
 
 function Library:register_flag(flag: any, expected_type: any, metadata: any?)
@@ -1672,9 +1919,9 @@ function Library:set_keybind(flag: any, key_code: any)
     local key_name = resolve_canonical_key_name(key_code)
 
     if not key_name or key_name == "" or key_name == "Unknown" or key_name == "None" then
-        self._config._keybinds[flag] = nil
-        if lib and lib._config and lib._config._keybinds then lib._config._keybinds[flag] = nil end
-        if Library and Library._config and Library._config._keybinds then Library._config._keybinds[flag] = nil end
+        self._config._keybinds[flag] = "None"
+        if lib and lib._config and lib._config._keybinds then lib._config._keybinds[flag] = "None" end
+        if Library and Library._config and Library._config._keybinds then Library._config._keybinds[flag] = "None" end
         if lib._keybind_entries and lib._keybind_entries[flag] then
             lib._keybind_entries[flag].key_name = nil
         end
@@ -1683,6 +1930,7 @@ function Library:set_keybind(flag: any, key_code: any)
         end
         if previous ~= nil then self:_notify_keybind(flag) end
         lib:update_keybind_list()
+        Library:_persist_keybinds()
         return nil
     end
 
@@ -1701,6 +1949,7 @@ function Library:set_keybind(flag: any, key_code: any)
     if previous ~= key_name then self:_notify_keybind(flag) end
 
     lib:update_keybind_list()
+    Library:_persist_keybinds()
     return key_name
 end
 function Library:get_toggle_keycode()
@@ -1787,8 +2036,6 @@ function Library:set_toggle_keybind(key_code: any)
         end
 
         self:_notify_keybind(f)
-        if lib and lib ~= self then lib:_notify_keybind(f) end
-        if Library and Library ~= self and Library ~= lib then Library:_notify_keybind(f) end
     end
 
     if self._config and self._config._flags then
@@ -1800,8 +2047,10 @@ function Library:set_toggle_keybind(key_code: any)
     if Library._config and Library._config._flags then
         Library._config._flags["ui_toggle_key"] = key_name
     end
+    Library._boot_toggle = key_name
 
     lib:update_keybind_list()
+    Library:_persist_keybinds()
     return key_name
 end
 local last_toggle_clock = 0
@@ -1849,7 +2098,7 @@ function Library:create_keybind(arg1: any, arg2: any)
     local flag = settings.flag or "keybind"
     local title = settings.title or tostring(flag)
     local default_key = settings.default or Enum.KeyCode.Unknown
-    if not Library:get_keybind_name(flag) and default_key and default_key ~= "Unknown" and default_key ~= Enum.KeyCode.Unknown then
+    if Library._config._keybinds[flag] == nil and default_key and default_key ~= "Unknown" and default_key ~= Enum.KeyCode.Unknown then
         Library:set_keybind(flag, default_key)
     end
     Library:register_keybind_entry(flag, title, function() return true end, nil, true)
@@ -1861,6 +2110,7 @@ function Library:create_keybind(arg1: any, arg2: any)
                 settings.callback()
             end
         end)
+        Connections:disconnect("lib_keybind_press_" .. flag)
         Connections["lib_keybind_press_" .. flag] = keyPressConn
     end
     return {
@@ -1870,6 +2120,12 @@ function Library:create_keybind(arg1: any, arg2: any)
     }
 end
 function Library:load()
+end
+function Library:_persist_keybinds()
+    if self._suspend_keybind_save then
+        return
+    end
+    Config:save(game.GameId, Library._config, true)
 end
 function Library:register_component(flag: any, apply_fn: any)
     if not flag or type(apply_fn) ~= 'function' then
@@ -2267,100 +2523,408 @@ function Library:apply_config(flags: any, keybinds: any?, options: any?)
     }
 end
 function Library:_named_configs_path()
-    return ConfigFolder .. "/configs_" .. tostring(game.GameId) .. ".json"
-end
-function Library:_read_named_configs()
-    local path = self:_named_configs_path()
-    if not isfile(path) then
-        local legacy_path = "Allusive/configs_" .. tostring(game.GameId) .. ".json"
-        local legacy_path2 = "roni/configs_" .. tostring(game.GameId) .. ".json"
-        if isfile(legacy_path) then
-            path = legacy_path
-        elseif isfile(legacy_path2) then
-            path = legacy_path2
-        else
-            return {}, nil
-        end
-    end
-    local ok, raw = pcall(readfile, path)
-    if not ok or type(raw) ~= "string" or raw == "" then
-        return {}, "could not read named configs"
-    end
-    local decoded_ok, decoded = pcall(function()
-        return HttpService:JSONDecode(raw)
-    end)
-    if not decoded_ok or type(decoded) ~= "table" then
-        return {}, "named configs are corrupt"
-    end
-    decoded = deep_copy_deserialize(decoded)
-    local clean = {}
-    for name, entry in pairs(decoded) do
-        if type(name) == "string" and type(entry) == "table" and type(entry._flags) == "table" and (entry._keybinds == nil or type(entry._keybinds) == "table") then
-            clean[name] = {
-                _flags = deep_copy_serialize(entry._flags),
-                _keybinds = entry._keybinds and deep_copy_serialize(entry._keybinds) or {}
-            }
-        end
-    end
-    return clean, nil
-end
-function Library:_write_named_configs(data: any)
-    local ok, encoded = pcall(function()
-        return HttpService:JSONEncode(deep_copy_serialize(data or {}))
-    end)
-    if not ok then
-        return false, "failed to encode named configs"
-    end
-    local write_ok, write_error = pcall(function()
-        writefile(self:_named_configs_path(), encoded)
-    end)
-    if not write_ok then
-        warn('[pivot] failed to write named configs', write_error)
-        return false, tostring(write_error)
-    end
-    return true, nil
+    return ConfigFolder
 end
 function Library:get_named_config_names()
-    local map = self:_read_named_configs()
-    local names = {}
-    for name in pairs(map) do
-        table.insert(names, name)
+    return Config:list()
+end
+function Library:get_active_config()
+    return Config.active
+end
+function Library:get_autoload_config()
+    return Config:get_autoload()
+end
+function Library:set_autoload_config(name: any)
+    if name ~= nil and not Config:sanitize(name) then
+        return false, "invalid config name"
     end
-    table.sort(names, function(a, b) return a:lower() < b:lower() end)
-    return names
+    local ok, err, clean = Config:set_autoload(name)
+    if not ok then
+        return false, err
+    end
+    return true, clean
 end
 function Library:save_named_config(name: string)
-    if type(name) ~= "string" then return false, "config name must be a string" end
-    name = name:match("^%s*(.-)%s*$")
-    if name == "" or #name > 80 then return false, "config name is empty or too long" end
-    local map, read_error = self:_read_named_configs()
-    if read_error then return false, read_error end
-    map[name] = {
-        _version = 2,
-        _flags = self:_exportable_named_flags(),
-        _keybinds = self:_exportable_named_keybinds(),
-    }
-    return self:_write_named_configs(map)
+    local clean = Config:sanitize(name)
+    if not clean or clean == Config.DEFAULT_NAME then
+        return false, "config name is empty, too long or reserved"
+    end
+    Config:flush()
+    local ok, err = Config:save(clean, self._config, true)
+    if not ok then
+        return false, err
+    end
+    Config.active = clean
+    return true
 end
 function Library:load_named_config(name: string)
-    if type(name) ~= "string" then return false, "config name must be a string" end
-    local map, read_error = self:_read_named_configs()
-    if read_error then return false, read_error end
-    local entry = map[name]
-    if type(entry) ~= "table" or type(entry._flags) ~= "table" then return false, "named config was not found or is invalid" end
-    local result = self:apply_config(entry._flags, entry._keybinds or {}, { replace = true, source = "named" })
+    local clean = Config:sanitize(name)
+    if not clean then
+        return false, "config name must be a string"
+    end
+    if not Config:exists(clean) then
+        return false, "named config was not found"
+    end
+    Config:flush()
+    local data = Config:load(clean)
+    if type(data) ~= "table" or type(data._flags) ~= "table" then
+        return false, "named config is invalid"
+    end
+    Config.active = clean
+    local result = self:apply_config(data._flags, data._keybinds or {}, { replace = true, source = "named" })
+    local toggle = data._keybinds and data._keybinds.ui_toggle_key
+    if type(toggle) == "string" then
+        self:set_toggle_keybind(toggle)
+    end
+    Config:save(clean, self._config, true)
     return result.ok == true, result
 end
 function Library:delete_named_config(name: string)
-    if type(name) ~= "string" then return false, "config name must be a string" end
-    local map, read_error = self:_read_named_configs()
-    if read_error then return false, read_error end
-    if map[name] == nil then return false, "named config was not found" end
-    map[name] = nil
-    return self:_write_named_configs(map)
+    if Config:sanitize(name) == nil then
+        return false, "config name must be a string"
+    end
+    if not Config:exists(name) then
+        return false, "named config was not found"
+    end
+    return Config:delete(name)
+end
+
+local function hash_key_path(seed)
+    local bxor = bit32 and bit32.bxor
+    local parts = {}
+    for round = 1, 4 do
+        local h = (2166136261 + round * 16777619) % 4294967296
+        local input = seed .. "|" .. round
+        for i = 1, #input do
+            local b = input:byte(i)
+            h = bxor and bxor(h, b) or ((h + b) % 4294967296)
+            h = (h * 16777619) % 4294967296
+        end
+        parts[round] = string.format("%08x", h)
+    end
+    return table.concat(parts)
+end
+Library.Luarmor = {
+    get_key_url = "https://ads.luarmor.net/get_key?for=Get_key_RONI-TnHNauttLqCA",
+    discord = "discord.gg/pivothub",
+    key_files = {
+        "Pivot-KSY/" .. hash_key_path("Pivot-KSY|Pivot"),
+        "RONI/RONI_Key.txt",
+    },
+    overrides = {},
+}
+Library.script_version = Library.script_version or "3.0"
+local LRM_NAMES = { "LRM_IsUserPremium", "LRM_SecondsLeft", "LRM_TotalExecutions", "LRM_LinkedDiscordID", "LRM_UserNote", "LRM_ScriptName", "LRM_ScriptVersion" }
+local LRM_ALIASES = {
+    premium = "LRM_IsUserPremium", is_premium = "LRM_IsUserPremium", IsUserPremium = "LRM_IsUserPremium",
+    seconds_left = "LRM_SecondsLeft", SecondsLeft = "LRM_SecondsLeft",
+    executions = "LRM_TotalExecutions", total_executions = "LRM_TotalExecutions", TotalExecutions = "LRM_TotalExecutions",
+    discord_id = "LRM_LinkedDiscordID", LinkedDiscordID = "LRM_LinkedDiscordID",
+    note = "LRM_UserNote", UserNote = "LRM_UserNote",
+    script_name = "LRM_ScriptName", ScriptName = "LRM_ScriptName",
+    version = "LRM_ScriptVersion", script_version = "LRM_ScriptVersion", ScriptVersion = "LRM_ScriptVersion",
+}
+Library.Luarmor.captured = {}
+local function lrm_valid(value)
+    if value == nil then
+        return false
+    end
+    if type(value) == "string" and (value == "" or value:find("^LRM_")) then
+        return false
+    end
+    return true
+end
+local function lrm_from_status_data(data, out)
+    if type(data) ~= "table" then
+        return
+    end
+    local expire = tonumber(data.auth_expire)
+    if expire then
+        if expire <= 0 then
+            out.LRM_SecondsLeft = out.LRM_SecondsLeft or math.huge
+        else
+            out.LRM_SecondsLeft = out.LRM_SecondsLeft or math.max(0, expire - os.time())
+        end
+    end
+    if out.LRM_TotalExecutions == nil and data.total_executions ~= nil then out.LRM_TotalExecutions = data.total_executions end
+    if out.LRM_LinkedDiscordID == nil and lrm_valid(data.discord_id) then out.LRM_LinkedDiscordID = data.discord_id end
+    if out.LRM_UserNote == nil and lrm_valid(data.note) then out.LRM_UserNote = data.note end
+end
+local function lrm_scan_table(tbl, out)
+    if type(tbl) ~= "table" then
+        return
+    end
+    for _, name in ipairs(LRM_NAMES) do
+        if out[name] == nil then
+            local ok, value = pcall(rawget, tbl, name)
+            if ok and lrm_valid(value) then
+                out[name] = value
+            end
+        end
+    end
+end
+function Library:capture_luarmor(max_level: any)
+    local captured = Library.Luarmor.captured
+    if type(getfenv) == "function" then
+        for level = 2, tonumber(max_level) or 8 do
+            local ok, env = pcall(getfenv, level)
+            if not ok or type(env) ~= "table" then
+                break
+            end
+            lrm_scan_table(env, captured)
+            local ok_mt, mt = pcall(getmetatable, env)
+            if ok_mt and type(mt) == "table" and type(rawget(mt, "__index")) == "table" then
+                lrm_scan_table(rawget(mt, "__index"), captured)
+            end
+        end
+    end
+    return captured
+end
+function Library:refresh_profile()
+    local lib = Library._current or self
+    local label = lib and lib._profile_text
+    if not label or not label.Set then
+        return
+    end
+    local text, info = lib:_profile_lines()
+    pcall(function() label:Set({ text = text }) end)
+    if info.seconds_left ~= nil and not info.lifetime and lib._start_profile_timer then
+        lib._start_profile_timer()
+    end
+end
+function Library:set_luarmor_info(values: any, ...)
+    if type(values) ~= "table" then
+        local packed = table.pack(values, ...)
+        values = {}
+        for index, name in ipairs({ "LRM_IsUserPremium", "LRM_SecondsLeft", "LRM_TotalExecutions", "LRM_LinkedDiscordID", "LRM_UserNote", "LRM_ScriptVersion" }) do
+            if packed[index] ~= nil then
+                values[name] = packed[index]
+            end
+        end
+    end
+    for key, value in pairs(values) do
+        local name = LRM_ALIASES[key] or key
+        if lrm_valid(value) then
+            Library.Luarmor.overrides[name] = value
+        end
+    end
+    local version = Library.Luarmor.overrides.LRM_ScriptVersion
+    if version ~= nil then
+        Library.script_version = tostring(version)
+    end
+    Library:refresh_profile()
+end
+Library.SetLuarmorInfo = Library.set_luarmor_info
+Library.SetLuarmor = Library.set_luarmor_info
+function Library:set_script_version(version: any)
+    if version ~= nil then
+        Library.script_version = tostring(version)
+        Library:refresh_profile()
+    end
+end
+function Library:get_luarmor_info()
+    local env = getgenv()
+    local status_values = {}
+    if type(env) == "table" then
+        lrm_from_status_data(rawget(env, "PivotLuarmor"), status_values)
+    end
+    local function read(name)
+        local value = Library.Luarmor.overrides[name]
+        if value == nil then value = Library.Luarmor.captured[name] end
+        if value == nil and type(env) == "table" then
+            local ok, v = pcall(rawget, env, name)
+            if ok and lrm_valid(v) then value = v end
+        end
+        if value == nil then
+            local ok, v = pcall(rawget, _G, name)
+            if ok and lrm_valid(v) then value = v end
+        end
+        if value == nil then value = status_values[name] end
+        return value
+    end
+    local premium = read("LRM_IsUserPremium")
+    if premium == nil and type(env) == "table" and type(rawget(env, "PivotPremium")) == "boolean" then
+        premium = rawget(env, "PivotPremium")
+    end
+    if type(premium) == "number" then premium = premium ~= 0 end
+    if type(premium) == "string" then premium = premium == "true" or premium == "1" end
+    local seconds = tonumber(read("LRM_SecondsLeft"))
+    local expires_at = nil
+    if seconds and seconds ~= math.huge and seconds == seconds then
+        local cache = Library.Luarmor._expiry_cache
+        if not cache or cache.raw ~= seconds then
+            cache = { raw = seconds, at = os.time() + seconds }
+            Library.Luarmor._expiry_cache = cache
+        end
+        expires_at = cache.at
+        seconds = math.max(0, expires_at - os.time())
+    end
+    local version = read("LRM_ScriptVersion") or Library.script_version
+    if type(env) == "table" and rawget(env, "PIVOT_VERSION") ~= nil then
+        version = rawget(env, "PIVOT_VERSION")
+    end
+    local note = read("LRM_UserNote")
+    local discord_id = read("LRM_LinkedDiscordID")
+    return {
+        available = premium ~= nil or seconds ~= nil,
+        premium = premium == true,
+        premium_known = premium ~= nil,
+        seconds_left = seconds,
+        lifetime = seconds ~= nil and (seconds == math.huge or seconds > 3153600000),
+        expires_at = expires_at,
+        executions = tonumber(read("LRM_TotalExecutions")),
+        discord_id = discord_id ~= nil and tostring(discord_id) or nil,
+        note = note ~= nil and tostring(note) or nil,
+        script_name = read("LRM_ScriptName"),
+        version = tostring(version),
+    }
+end
+function Library:format_time_left(seconds: any)
+    seconds = tonumber(seconds)
+    if not seconds then
+        return "Unknown"
+    end
+    if seconds == math.huge or seconds > 3153600000 then
+        return "Lifetime"
+    end
+    if seconds <= 0 then
+        return "Expired"
+    end
+    seconds = math.floor(seconds)
+    local d = math.floor(seconds / 86400)
+    local h = math.floor(seconds % 86400 / 3600)
+    local m = math.floor(seconds % 3600 / 60)
+    local s = seconds % 60
+    if d > 0 then
+        return string.format("%dd %02dh %02dm", d, h, m)
+    end
+    return string.format("%02dh %02dm %02ds", h, m, s)
+end
+function Library:reset_saved_key()
+    local removed = 0
+    for _, path in ipairs(Library.Luarmor.key_files) do
+        if fs_delete(path) then
+            removed += 1
+        elseif fs_isfile(path) then
+            if fs_write(path, "") then
+                removed += 1
+            end
+        end
+    end
+    local env = getgenv()
+    if type(env) == "table" then
+        env.script_key = nil
+        env.ScriptKey = nil
+        env.PivotKeySystemLoaded = nil
+    end
+    pcall(function()
+        _G.script_key = nil
+        _G.ScriptKey = nil
+    end)
+    return removed
+end
+function Library:_profile_lines()
+    local info = self:get_luarmor_info()
+    local plan = info.premium_known and (info.premium and "Premium" or "Free") or "Unknown"
+    local expiry
+    if info.seconds_left == nil then
+        expiry = "Unknown"
+    elseif info.lifetime then
+        expiry = "Lifetime"
+    else
+        expiry = self:format_time_left(info.expires_at - os.time())
+    end
+    local lines = {
+        "Plan: " .. plan,
+        "Key expires in: " .. expiry,
+        "Executions: " .. (info.executions and tostring(info.executions) or "-"),
+        "Discord ID: " .. (info.discord_id or "Not linked"),
+        "Note: " .. ((info.note and info.note ~= "") and info.note or "-"),
+        "Version: " .. tostring(info.version),
+    }
+    return table.concat(lines, "\n"), info
+end
+function Library:_refresh_active_label()
+    local label = self._cfg_status_text
+    if label and label.Set then
+        pcall(function()
+            label:Set({ text = 'Active: ' .. tostring(Config.active) .. '  |  Autoload: ' .. tostring(Config:get_autoload()) })
+        end)
+    end
+end
+function Library:_build_profile_module(tab: any)
+    if not tab or not tab.create_module then
+        return
+    end
+    local Module = tab:create_module({
+        title = 'Profile',
+        description = 'Your Pivot key and account.',
+        flag = 'pivot_profile_module',
+        rich = false,
+        persist = false,
+        export = false,
+        section = 'right'
+    })
+    local text, info = self:_profile_lines()
+    local Profile = Module:create_text({ text = text })
+    self._profile_text = Profile
+    Module:create_feature({
+        title = 'Copy Get-Key Link',
+        flag = 'pivot_profile_key',
+        disablecheck = true,
+        button_callback = function()
+            local ok = self:set_clipboard(Library.Luarmor.get_key_url)
+            self.SendNotification({ title = 'Profile', text = ok and 'Get-Key link copied.' or Library.Luarmor.get_key_url, type = ok and 'success' or 'info', duration = 4 })
+        end
+    })
+    Module:create_feature({
+        title = 'Copy Discord',
+        flag = 'pivot_profile_discord',
+        disablecheck = true,
+        button_callback = function()
+            local ok = self:set_clipboard(Library.Luarmor.discord)
+            self.SendNotification({ title = 'Profile', text = ok and 'Discord invite copied.' or Library.Luarmor.discord, type = ok and 'success' or 'info', duration = 4 })
+        end
+    })
+    Module:create_feature({
+        title = 'Reset Saved Key',
+        flag = 'pivot_profile_reset',
+        disablecheck = true,
+        button_callback = function()
+            local removed = self:reset_saved_key()
+            self.SendNotification({ title = 'Profile', text = removed > 0 and 'Saved key removed. Re-execute to enter a new key.' or 'No saved key file found.', type = 'success', duration = 5 })
+        end
+    })
+    local timer_running = false
+    self._start_profile_timer = function()
+        if timer_running then
+            return
+        end
+        timer_running = true
+        task.spawn(function()
+            local last = nil
+            while self._ui and self._profile_text == Profile do
+                if self._ui_open ~= false then
+                    local new_text, now_info = self:_profile_lines()
+                    if new_text ~= last then
+                        last = new_text
+                        pcall(function() Profile:Set({ text = new_text }) end)
+                    end
+                    if now_info.seconds_left == nil or now_info.lifetime or now_info.seconds_left <= 0 then
+                        break
+                    end
+                end
+                task.wait(1)
+            end
+            timer_running = false
+        end)
+    end
+    if info.seconds_left ~= nil and not info.lifetime then
+        self._start_profile_timer()
+    end
 end
 function Library:set_clipboard(text: string)
-    local fn = setclipboard or toclipboard or (syn and syn.write_clipboard)
+    local fn = (type(setclipboard) == "function" and setclipboard) or (type(toclipboard) == "function" and toclipboard) or (type(set_clipboard) == "function" and set_clipboard) or (type(syn) == "table" and type(syn.write_clipboard) == "function" and syn.write_clipboard) or (type(Clipboard) == "table" and type(Clipboard.set) == "function" and Clipboard.set)
     if fn then
         local success = pcall(fn, text)
         return success
@@ -2374,7 +2938,7 @@ function Library:clear_keybind(flag: any)
     end
     if lib._config and lib._config._keybinds then
         local had_keybind = self:get_keybind_name(flag) ~= nil
-        lib._config._keybinds[flag] = nil
+        lib._config._keybinds[flag] = "None"
         if lib._keybind_entries and lib._keybind_entries[flag] then
             lib._keybind_entries[flag].key_name = nil
         end
@@ -2382,7 +2946,9 @@ function Library:clear_keybind(flag: any)
             self:_notify_keybind(flag)
         end
         lib:update_keybind_list()
+        Library:_persist_keybinds()
     end
+    return nil
 end
 function Library:keybind_matches(flag: any, input: InputObject)
     local key_name = self:get_keybind_name(flag)
@@ -2433,8 +2999,8 @@ function Library:update_keybind_list()
             is_enabled = (Library._config._flags[flag] == true)
         end
 
-        local text_color = is_enabled and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(180, 180, 180)
-        local display_key = "[ " .. key_name .. " ]"
+        local text_color = is_enabled and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(150, 150, 150)
+        local display_key = key_name
 
         local row = Instance.new("Frame")
         row.Name = "Row_" .. tostring(flag)
@@ -2443,25 +3009,32 @@ function Library:update_keybind_list()
         row.ZIndex = 51
         row.Parent = widget
 
-        local font_params = Instance.new("GetTextBoundsParams")
-        font_params.Text = display_key
-        font_params.Font = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
-        font_params.Size = 13
-        font_params.Width = 1000
-        local key_width = 44
-        pcall(function()
-            key_width = TextService:GetTextBoundsAsync(font_params).X + 6
-        end)
+        local chip_font = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
+        local function measure(text)
+            local params = Instance.new("GetTextBoundsParams")
+            params.Text = text
+            params.Font = chip_font
+            params.Size = 11
+            params.Width = 1000
+            local width = #text * 7
+            pcall(function()
+                width = TextService:GetTextBoundsAsync(params).X
+            end)
+            return width + 14
+        end
+        local state_text = is_enabled and "Enabled" or "Disabled"
+        local key_width = math.max(22, measure(display_key))
+        local state_width = measure(state_text)
 
         local titleLabel = Instance.new("TextLabel")
         titleLabel.Name = "Title"
         titleLabel.BackgroundTransparency = 1
-        titleLabel.Size = UDim2.new(1, -(key_width + 8), 1, 0)
+        titleLabel.Size = UDim2.new(1, -(key_width + state_width + 12), 1, 0)
         titleLabel.Position = UDim2.new(0, 0, 0, 0)
         titleLabel.Text = entry.title or tostring(flag)
         titleLabel.TextColor3 = text_color
         titleLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-        titleLabel.TextSize = 13
+        titleLabel.TextSize = 12
         titleLabel.TextXAlignment = Enum.TextXAlignment.Left
         titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
         titleLabel.BorderSizePixel = 0
@@ -2469,27 +3042,50 @@ function Library:update_keybind_list()
         titleLabel.Parent = row
         Translator:bind(titleLabel, entry.title or tostring(flag))
 
+        local stateChip = Instance.new("TextLabel")
+        stateChip.Name = "State"
+        stateChip.AnchorPoint = Vector2.new(1, 0.5)
+        stateChip.Position = UDim2.new(1, 0, 0.5, 0)
+        stateChip.Size = UDim2.new(0, state_width, 0, 18)
+        stateChip.BackgroundColor3 = is_enabled and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(32, 32, 32)
+        stateChip.BackgroundTransparency = is_enabled and 0.88 or 0
+        stateChip.Text = state_text
+        stateChip.TextColor3 = text_color
+        stateChip.FontFace = chip_font
+        stateChip.TextSize = 11
+        stateChip.BorderSizePixel = 0
+        stateChip.ZIndex = 52
+        stateChip.Parent = row
+        Translator:bind(stateChip, state_text)
+        local stateCorner = Instance.new("UICorner")
+        stateCorner.CornerRadius = UDim.new(0, 5)
+        stateCorner.Parent = stateChip
+
         local keyBtn = Instance.new("TextButton")
         keyBtn.Name = "Key"
-        keyBtn.BackgroundTransparency = 1
+        keyBtn.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
+        keyBtn.BackgroundTransparency = 0
         keyBtn.AnchorPoint = Vector2.new(1, 0.5)
-        keyBtn.Position = UDim2.new(1, 0, 0.5, 0)
-        keyBtn.Size = UDim2.new(0, key_width, 0, 20)
+        keyBtn.Position = UDim2.new(1, -(state_width + 6), 0.5, 0)
+        keyBtn.Size = UDim2.new(0, key_width, 0, 18)
         keyBtn.Text = display_key
         keyBtn.TextColor3 = text_color
-        keyBtn.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
-        keyBtn.TextSize = 13
-        keyBtn.TextXAlignment = Enum.TextXAlignment.Right
+        keyBtn.FontFace = chip_font
+        keyBtn.TextSize = 11
+        keyBtn.TextXAlignment = Enum.TextXAlignment.Center
         keyBtn.AutoButtonColor = false
         keyBtn.BorderSizePixel = 0
         keyBtn.ZIndex = 52
         keyBtn.Parent = row
+        local keyCorner = Instance.new("UICorner")
+        keyCorner.CornerRadius = UDim.new(0, 5)
+        keyCorner.Parent = keyBtn
 
         keyBtn.MouseEnter:Connect(function()
-            keyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+            TweenService:Create(keyBtn, TweenInfo.new(0.15), { BackgroundColor3 = Color3.fromRGB(44, 44, 44), TextColor3 = Color3.fromRGB(255, 255, 255) }):Play()
         end)
         keyBtn.MouseLeave:Connect(function()
-            keyBtn.TextColor3 = text_color
+            TweenService:Create(keyBtn, TweenInfo.new(0.15), { BackgroundColor3 = Color3.fromRGB(32, 32, 32), TextColor3 = text_color }):Play()
         end)
         keyBtn.MouseButton1Click:Connect(function()
             lib:begin_keybind_widget_capture(flag)
@@ -2568,7 +3164,7 @@ function Library:begin_keybind_widget_capture(flag: any)
     Library._choosing_keybind = true
 
     local entry = lib._keybind_entries[flag]
-    local previous_key = Library:get_keybind_name(flag)
+    previous_key = Library:get_keybind_name(flag)
 
     local widget = lib._keybinds_widget or Library._keybinds_widget
     if widget then
@@ -2585,7 +3181,6 @@ function Library:begin_keybind_widget_capture(flag: any)
         pcall(entry.on_changed, "...", true)
     end
 
-    local connection_key = "keybind_widget_capture_" .. tostring(flag)
     Connections:disconnect(connection_key)
     Connections[connection_key] = UserInputService.InputBegan:Connect(function(input, processed)
         if processed then return end
@@ -2663,6 +3258,31 @@ function Library:unregister_keybind_entry(flag: any)
     lib:update_keybind_list()
 end
 function Library:create_ui()
+    for _, window in ipairs({ Library._previous_window, Library._current ~= self and Library._current or nil }) do
+        if window and window ~= self and window._ui then
+            pcall(function() window._ui:Destroy() end)
+        end
+    end
+    Library._previous_window = nil
+    for _, holder in ipairs({ (gethui and gethui()) or CoreGui, CoreGui }) do
+        pcall(function()
+            for _, gui in ipairs(holder:GetChildren()) do
+                if gui ~= self._ui and (gui:FindFirstChild('pivotSignature') or gui:FindFirstChild('RoniSignature')) then
+                    gui:Destroy()
+                end
+            end
+        end)
+    end
+    Library._current = self
+    Library._boot_keybinds = {}
+    for flag, value in pairs(Library._config._keybinds or {}) do
+        if type(value) == "string" then
+            Library._boot_keybinds[flag] = value
+        end
+    end
+    local saved_boot_toggle = Library._config._keybinds and Library._config._keybinds.ui_toggle_key
+    Library._boot_toggle = type(saved_boot_toggle) == "string" and saved_boot_toggle:gsub("^Enum%.KeyCode%.", "") or nil
+    Library._boot_done = false
     local old_Allusive = CoreGui:FindFirstChild('pivot') or CoreGui:FindFirstChild('roni')
     if old_Allusive then
         Debris:AddItem(old_Allusive, 0)
@@ -2688,14 +3308,6 @@ function Library:create_ui()
     else
         protect_gui(Allusive)
         Allusive.Parent = (gethui and gethui()) or CoreGui
-        local hooking = hookfunc or hookfunction
-        if hooking then
-            pcall(function()
-                hooking(ContentProvider.PreloadAsync, function(...) return 1 end)
-                hooking(ContentProvider.Preload, function(...) return 2 end)
-                hooking(ContentProvider.GetAssetFetchStatus, function(...) return 3 end)
-            end)
-        end
     end
     local Container = Instance.new('Frame')
     Container.ClipsDescendants = true
@@ -2703,18 +3315,18 @@ function Library:create_ui()
     Container.AnchorPoint = Vector2.new(0.5, 0.5)
     Container.Name = 'Container'
     Container.BackgroundTransparency = 0
-    Container.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+    Container.BackgroundColor3 = Color3.fromRGB(17, 17, 17)
     Container.Position = UDim2.new(0.5, 0, 0.5, 0)
     Container.Size = UDim2.new(0, 0, 0, 0)
     Container.Active = true
     Container.BorderSizePixel = 0
     Container.Parent = Allusive
     local UICorner = Instance.new('UICorner')
-    UICorner.CornerRadius = UDim.new(0, 10)
+    UICorner.CornerRadius = UDim.new(0, 12)
     UICorner.Parent = Container
     local UIStroke = Instance.new('UIStroke')
-    UIStroke.Color = Color3.fromRGB(45, 45, 45)
-    UIStroke.Transparency = 0.2
+    UIStroke.Color = Color3.fromRGB(255, 255, 255)
+    UIStroke.Transparency = 0.94
     UIStroke.Thickness = 1
     UIStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     UIStroke.Parent = Container
@@ -2727,11 +3339,30 @@ function Library:create_ui()
     Handler.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
     Handler.ClipsDescendants = true
     Handler.Parent = Container
+    local Sidebar = Instance.new('Frame')
+    Sidebar.Name = 'Sidebar'
+    Sidebar.BorderSizePixel = 0
+    Sidebar.BackgroundColor3 = Color3.fromRGB(13, 13, 13)
+    Sidebar.Size = UDim2.new(0, 164, 1, 0)
+    Sidebar.ZIndex = 0
+    Sidebar.Parent = Handler
+    local SidebarCorner = Instance.new('UICorner')
+    SidebarCorner.CornerRadius = UDim.new(0, 12)
+    SidebarCorner.Parent = Sidebar
+    local SidebarPatch = Instance.new('Frame')
+    SidebarPatch.Name = 'Patch'
+    SidebarPatch.BorderSizePixel = 0
+    SidebarPatch.BackgroundColor3 = Color3.fromRGB(13, 13, 13)
+    SidebarPatch.AnchorPoint = Vector2.new(1, 0)
+    SidebarPatch.Position = UDim2.new(1, 0, 0, 0)
+    SidebarPatch.Size = UDim2.new(0, 14, 1, 0)
+    SidebarPatch.ZIndex = 0
+    SidebarPatch.Parent = Sidebar
     local Tabs = Instance.new('ScrollingFrame')
     Tabs.ScrollBarImageTransparency = 1
     Tabs.ScrollBarThickness = 0
     Tabs.Name = 'Tabs'
-    Tabs.Size = UDim2.new(0, 129, 0, 401)
+    Tabs.Size = UDim2.new(0, 136, 0, 401)
     Tabs.Selectable = false
     Tabs.AutomaticCanvasSize = Enum.AutomaticSize.Y
     Tabs.BackgroundTransparency = 1
@@ -2745,13 +3376,13 @@ function Library:create_ui()
     Tabs.ClipsDescendants = true
     Tabs.Parent = Handler
     local UIListLayout = Instance.new('UIListLayout')
-    UIListLayout.Padding = UDim.new(0, 4)
+    UIListLayout.Padding = UDim.new(0, 2)
     UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
     UIListLayout.Parent = Tabs
     local ClientName = Instance.new('TextLabel')
     ClientName.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Bold, Enum.FontStyle.Normal)
     ClientName.TextColor3 = Color3.fromRGB(255, 255, 255)
-    ClientName.TextTransparency = 0.15
+    ClientName.TextTransparency = 0
     ClientName.Text = 'pivot'
     ClientName.Name = 'ClientName'
     ClientName.Size = UDim2.new(0, 70, 0, 16)
@@ -2769,6 +3400,7 @@ function Library:create_ui()
         ColorSequenceKeypoint.new(0, Color3.fromRGB(175, 175, 175)),
         ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 255, 255))
     }
+    UIGradient.Enabled = false
     UIGradient.Parent = ClientName
     local Pin = Instance.new('Frame')
     Pin.Name = 'Pin'
@@ -2777,6 +3409,7 @@ function Library:create_ui()
     Pin.Size = UDim2.new(0, 3, 0, 18)
     Pin.BorderSizePixel = 0
     Pin.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    Pin.Visible = false
     Pin.Parent = Handler
     local UICorner = Instance.new('UICorner')
     UICorner.CornerRadius = UDim.new(1, 0)
@@ -2801,7 +3434,8 @@ function Library:create_ui()
     Divider.BorderColor3 = Color3.fromRGB(0, 0, 0)
     Divider.Size = UDim2.new(0, 1, 1, 0)
     Divider.BorderSizePixel = 0
-    Divider.BackgroundColor3 = Color3.fromRGB(38, 38, 38)
+    Divider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    Divider.BackgroundTransparency = 0.95
     Divider.Parent = Handler
     local Sections = Instance.new('Folder')
     Sections.Name = 'Sections'
@@ -2838,7 +3472,7 @@ function Library:create_ui()
 
     local KeybindsWidget = Instance.new("Frame")
     KeybindsWidget.Name = "_keybinds_widget"
-    KeybindsWidget.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+    KeybindsWidget.BackgroundColor3 = Color3.fromRGB(17, 17, 17)
     KeybindsWidget.BackgroundTransparency = 0
     KeybindsWidget.Position = UDim2.new(0, 16, 0.2, 0)
     KeybindsWidget.Size = UDim2.new(0, 250, 0, 0)
@@ -2851,11 +3485,12 @@ function Library:create_ui()
     KeybindsWidget.Parent = Allusive
 
     local KBWidgetCorner = Instance.new("UICorner")
-    KBWidgetCorner.CornerRadius = UDim.new(0, 4)
+    KBWidgetCorner.CornerRadius = UDim.new(0, 10)
     KBWidgetCorner.Parent = KeybindsWidget
 
     local KBWidgetStroke = Instance.new("UIStroke")
-    KBWidgetStroke.Color = Color3.fromRGB(42, 42, 42)
+    KBWidgetStroke.Color = Color3.fromRGB(255, 255, 255)
+    KBWidgetStroke.Transparency = 0.93
     KBWidgetStroke.Thickness = 1
     KBWidgetStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
     KBWidgetStroke.Parent = KeybindsWidget
@@ -2890,18 +3525,20 @@ function Library:create_ui()
 
     local KBTitle = Instance.new("TextLabel")
     KBTitle.BackgroundTransparency = 1
-    KBTitle.Size = UDim2.new(1, 0, 1, 0)
+    KBTitle.Position = UDim2.new(0, 34, 0, 0)
+    KBTitle.Size = UDim2.new(1, -46, 1, 0)
     KBTitle.Text = "Keybinds"
     Translator:bind(KBTitle, "Keybinds")
     KBTitle.TextColor3 = Color3.fromRGB(255, 255, 255)
     KBTitle.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
     KBTitle.TextSize = 13
-    KBTitle.TextXAlignment = Enum.TextXAlignment.Center
+    KBTitle.TextXAlignment = Enum.TextXAlignment.Left
     KBTitle.ZIndex = 51
     KBTitle.Parent = KBHeader
 
     local KBDivider = Instance.new("Frame")
-    KBDivider.BackgroundColor3 = Color3.fromRGB(38, 38, 38)
+    KBDivider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+    KBDivider.BackgroundTransparency = 0.95
     KBDivider.BorderSizePixel = 0
     KBDivider.Position = UDim2.new(0, 0, 1, -1)
     KBDivider.Size = UDim2.new(1, 0, 0, 1)
@@ -2950,18 +3587,17 @@ function Library:create_ui()
             end)
         end
     end)
-    UserInputService.InputChanged:Connect(function(input)
+    Connections:disconnect('keybinds_widget_drag')
+    Connections['keybinds_widget_drag'] = UserInputService.InputChanged:Connect(function(input)
         if kb_dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
             local scale = (self._ui_scale and self._ui_scale > 0) and self._ui_scale or 1
             local delta = (input.Position - kb_drag_start) / scale
-            TweenService:Create(KeybindsWidget, TweenInfo.new(0.15), {
-                Position = UDim2.new(
-                    kb_start_pos.X.Scale,
-                    kb_start_pos.X.Offset + delta.X,
-                    kb_start_pos.Y.Scale,
-                    kb_start_pos.Y.Offset + delta.Y
-                )
-            }):Play()
+            KeybindsWidget.Position = UDim2.new(
+                kb_start_pos.X.Scale,
+                kb_start_pos.X.Offset + delta.X,
+                kb_start_pos.Y.Scale,
+                kb_start_pos.Y.Offset + delta.Y
+            )
         end
     end)
 
@@ -2996,7 +3632,6 @@ function Library:create_ui()
             local ok, kc = pcall(function() return Enum.KeyCode[new_key] end)
             if ok and kc then
                 self:set_toggle_keybind(kc)
-                Config:save(game.GameId, self._config)
             end
         end
     end, true)
@@ -3057,7 +3692,27 @@ function Library:create_ui()
         end
         self._mobile_toggle_uiscale = nil
         self._ui = nil
+        Config:flush()
         Connections:disconnect_all()
+        table.clear(Library._component_registry)
+        table.clear(Library._keybind_listeners)
+        table.clear(Library._active_dropdowns)
+        if self._keybind_entries then
+            table.clear(self._keybind_entries)
+        end
+        if self._keybind_order then
+            table.clear(self._keybind_order)
+        end
+        self._keybinds_widget = nil
+        self._keybinds_frame = nil
+        Library._keybinds_widget = nil
+        Library._keybinds_frame = nil
+        self._all_modules = nil
+        self._configs_tab_created = nil
+        self._last_category = nil
+        if Library._current == self then
+            Library._current = nil
+        end
     end)
     function self:Update1Run(a)
         if a == "nil" then
@@ -3136,6 +3791,27 @@ function Library:create_ui()
             self:load()
         end
     end)
+    task.delay(2, function()
+        local saved = Library._boot_toggle
+        Library._boot_done = true
+        if not self._ui then
+            return
+        end
+        if saved and self:get_toggle_keycode().Name ~= saved then
+            self:set_toggle_keybind(saved)
+        end
+        local boot = Library._boot_keybinds
+        if type(boot) == "table" then
+            Library._suspend_keybind_save = true
+            for flag, value in pairs(boot) do
+                if flag ~= "ui_toggle_key" and flag ~= "minimize_bind" and flag ~= "minimize" and Library._config._keybinds[flag] ~= value and type(value) == "string" then
+                    self:set_keybind(flag, value)
+                end
+            end
+            Library._suspend_keybind_save = false
+            Library:_persist_keybinds()
+        end
+    end)
     task.defer(function()
         local current_opt = Translator._selected_option or "Auto"
         if current_opt ~= "English" then
@@ -3145,6 +3821,9 @@ function Library:create_ui()
     function self:create_configs_tab()
         if self._configs_tab_created then
             return
+        end
+        if self._last_category ~= "Menu" then
+            self:create_category("Menu")
         end
         self._configs_tab_created = true
         local CFG_ICON = 'rbxassetid://86490552961317'
@@ -3156,6 +3835,8 @@ function Library:create_ui()
             'pivot_cfg_module', 'pivot_cfg_ui_settings',
             'pivot_cfg_save', 'pivot_cfg_load', 'pivot_cfg_delete',
             'pivot_cfg_export', 'pivot_cfg_import',
+            'pivot_cfg_refresh', 'pivot_cfg_autoload', 'pivot_cfg_autoload_clear', 'pivot_cfg_status',
+            'pivot_profile_module', 'pivot_profile_key', 'pivot_profile_discord', 'pivot_profile_reset',
             'roni_cfg_name', 'roni_cfg_code', 'roni_cfg_list',
             'roni_cfg_module', 'roni_cfg_ui_settings',
             'roni_cfg_save', 'roni_cfg_load', 'roni_cfg_delete',
@@ -3173,6 +3854,7 @@ function Library:create_ui()
             return fallback
         end
         local ConfigsTab = self:create_tab('Configs', CFG_ICON)
+        self:_build_profile_module(ConfigsTab)
         local Module = ConfigsTab:create_module({
             title = 'Config Manager',
             description = 'Save, load and share your configs.',
@@ -3210,6 +3892,7 @@ function Library:create_ui()
                     return
                 end
                 local names = self:get_named_config_names()
+                self:_refresh_active_label()
                 self._cfg_dropdown_mgr = self._cfg_dropdown_mgr:New({
                     Order = true,
                     title = 'Your Configs',
@@ -3228,6 +3911,7 @@ function Library:create_ui()
             persist = false,
             export = false
         })
+        self._cfg_status_text = Module:create_text({ text = 'Active: ' .. tostring(Config.active) .. '  |  Autoload: ' .. tostring(Config:get_autoload()) })
         Module:create_feature({
             title = 'Load',
             flag = 'pivot_cfg_load',
@@ -3239,6 +3923,7 @@ function Library:create_ui()
                     return
                 end
                 local ok, result = self:load_named_config(name)
+                self:_refresh_active_label()
                 if ok and (type(result) ~= 'table' or result.ok ~= false) then
                     self.SendNotification({ title = 'Configs', text = 'Loaded "' .. tostring(name) .. '".', type = 'success', duration = 4 })
                 else
@@ -3249,6 +3934,54 @@ function Library:create_ui()
                         duration = 5
                     })
                 end
+            end
+        })
+        local function rebuild_config_list()
+            self._cfg_dropdown_mgr = self._cfg_dropdown_mgr:New({
+                Order = true,
+                title = 'Your Configs',
+                flag = ListFlag,
+                options = self:get_named_config_names(),
+                persist = false,
+                export = false
+            })
+            self:_refresh_active_label()
+        end
+        Module:create_feature({
+            title = 'Refresh List',
+            flag = 'pivot_cfg_refresh',
+            disablecheck = true,
+            button_callback = function()
+                rebuild_config_list()
+            end
+        })
+        Module:create_feature({
+            title = 'Set Autoload',
+            flag = 'pivot_cfg_autoload',
+            disablecheck = true,
+            button_callback = function()
+                local name = self._config._flags[ListFlag]
+                if name == nil or name == "" then
+                    name = Config.active
+                end
+                local ok, result = self:set_autoload_config(name)
+                self:_refresh_active_label()
+                self.SendNotification({
+                    title = 'Configs',
+                    text = ok and ('"' .. tostring(result) .. '" will load on start.') or config_error_text(result, 'Could not set autoload.'),
+                    type = ok and 'success' or 'error',
+                    duration = 4
+                })
+            end
+        })
+        Module:create_feature({
+            title = 'Clear Autoload',
+            flag = 'pivot_cfg_autoload_clear',
+            disablecheck = true,
+            button_callback = function()
+                self:set_autoload_config(nil)
+                self:_refresh_active_label()
+                self.SendNotification({ title = 'Configs', text = 'Autoload reset to autosave.', type = 'success', duration = 4 })
             end
         })
         Module:create_feature({
@@ -3354,28 +4087,44 @@ function Library:create_ui()
             end
         })
         Module:create_divider({ title = 'UI Settings', showtopic = true })
-        local initial_selected_key = (self:get_toggle_keycode()).Name
-        local toggle_dd = Module:create_dropdown({
-            title = 'Toggle Key',
-            flag = 'ui_toggle_key',
-            options = {'Insert', 'Home', 'End', 'Delete', 'RightShift', 'LeftAlt', 'RightAlt', 'RightControl', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9'},
-            default = initial_selected_key,
-            persist = true,
-            export = false,
-            callback = function(selected)
-                local ok, keyCode = pcall(function() return Enum.KeyCode[selected] end)
-                if ok and keyCode then
-                    self:set_toggle_keybind(keyCode)
-                    Config:save(game.GameId, self._config)
+        local BASE_TOGGLE_KEYS = {'Insert', 'Home', 'End', 'Delete', 'RightShift', 'LeftAlt', 'RightAlt', 'RightControl', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9'}
+        local function toggle_key_settings(current_key)
+            local options = table.clone(BASE_TOGGLE_KEYS)
+            if type(current_key) == 'string' and current_key ~= '' and not table.find(options, current_key) then
+                table.insert(options, current_key)
+            end
+            return {
+                title = 'Toggle Key',
+                flag = 'ui_toggle_key',
+                options = options,
+                default = current_key,
+                persist = true,
+                export = false,
+                callback = function(selected)
+                    local ok, keyCode = pcall(function() return Enum.KeyCode[selected] end)
+                    if ok and keyCode and keyCode ~= self:get_toggle_keycode() then
+                        self:set_toggle_keybind(keyCode)
+                    end
                 end
-            end
-        })
+            }
+        end
+        local toggle_dd_settings = toggle_key_settings((self:get_toggle_keycode()).Name)
+        local toggle_dd = Module:create_dropdown(toggle_dd_settings)
+        local syncing_toggle = false
         local function sync_toggle_dropdown(key_name)
-            if key_name and toggle_dd and toggle_dd.update then
-                pcall(function()
-                    toggle_dd:update(key_name, { persist = false, callback = false })
-                end)
+            if syncing_toggle or not key_name or not toggle_dd then
+                return
             end
+            syncing_toggle = true
+            pcall(function()
+                if not table.find(toggle_dd_settings.options, key_name) and toggle_dd.New then
+                    toggle_dd_settings = toggle_key_settings(key_name)
+                    toggle_dd = toggle_dd:New(toggle_dd_settings)
+                elseif toggle_dd.update then
+                    toggle_dd:update(key_name, { persist = false, callback = false })
+                end
+            end)
+            syncing_toggle = false
         end
         Library:register_keybind_listener('ui_toggle_key', sync_toggle_dropdown)
         Library:register_keybind_listener('minimize_bind', sync_toggle_dropdown)
@@ -3441,7 +4190,8 @@ function Library:create_ui()
             Pin.Position = UDim2.new(0.026, 0, 0, target_y)
         end
     end
-    Tabs:GetPropertyChangedSignal('CanvasPosition'):Connect(function()
+    Connections:disconnect('tabs_canvas_position')
+    Connections['tabs_canvas_position'] = Tabs:GetPropertyChangedSignal('CanvasPosition'):Connect(function()
         if self._update_pin_position then
             self._update_pin_position()
         end
@@ -3458,11 +4208,11 @@ function Library:create_ui()
                     Position = UDim2.new(0.026, 0, 0, target_y)
                 }):Play()    
                 TweenService:Create(object, TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                    BackgroundColor3 = Color3.fromRGB(32, 32, 32),
-                    BackgroundTransparency = 0.5
+                    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+                    BackgroundTransparency = 0.95
                 }):Play()
                 TweenService:Create(object.TextLabel, TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                    TextTransparency = 0.15,
+                    TextTransparency = 0,
                     TextColor3 = Color3.fromRGB(255, 255, 255)
                 }):Play()
                 if object.TextLabel:FindFirstChildWhichIsA('UIGradient') then
@@ -3471,7 +4221,7 @@ function Library:create_ui()
                     }):Play()
                 end
                 TweenService:Create(object.Icon, TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                    ImageTransparency = 0.15,
+                    ImageTransparency = 0,
                     ImageColor3 = Color3.fromRGB(255, 255, 255)
                 }):Play()
                 continue
@@ -3480,8 +4230,8 @@ function Library:create_ui()
                 BackgroundTransparency = 1
             }):Play()
             TweenService:Create(object.TextLabel, TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                TextTransparency = 0.65,
-                TextColor3 = Color3.fromRGB(180, 180, 180)
+                TextTransparency = 0,
+                TextColor3 = Color3.fromRGB(140, 140, 140)
             }):Play()
             if object.TextLabel:FindFirstChildWhichIsA('UIGradient') then
                 TweenService:Create(object.TextLabel.UIGradient, TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
@@ -3489,8 +4239,8 @@ function Library:create_ui()
                 }):Play()
             end
             TweenService:Create(object.Icon, TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                ImageTransparency = 0.75,
-                ImageColor3 = Color3.fromRGB(180, 180, 180)
+                ImageTransparency = 0,
+                ImageColor3 = Color3.fromRGB(140, 140, 140)
             }):Play()
         end
     end
@@ -3532,7 +4282,42 @@ function Library:create_ui()
         config = 'rbxassetid://10734950309',
         skins = 'rbxassetid://10709790948',
     }
-    function self:create_tab(title: string, icon: string)
+    function self:create_category(name: string)
+        if type(name) ~= "string" or name == "" then return nil end
+        self._tab = self._tab or 0
+        local Label = Instance.new('TextLabel')
+        Label.Name = 'Category'
+        Label.BackgroundTransparency = 1
+        Label.BorderSizePixel = 0
+        Label.Size = UDim2.new(0, 136, 0, (self._category_count or 0) > 0 and 30 or 20)
+        Label.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Bold, Enum.FontStyle.Normal)
+        Label.Text = string.upper(name)
+        Label.TextColor3 = Color3.fromRGB(110, 110, 110)
+        Label.TextSize = 10
+        Label.TextXAlignment = Enum.TextXAlignment.Left
+        Label.TextYAlignment = Enum.TextYAlignment.Bottom
+        Label.LayoutOrder = self._tab
+        Label.Parent = Tabs
+        local LabelPad = Instance.new('UIPadding')
+        LabelPad.PaddingLeft = UDim.new(0, 12)
+        LabelPad.PaddingBottom = UDim.new(0, 5)
+        LabelPad.Parent = Label
+        Translator:bind(Label, name, "Text", string.upper)
+        self._tab += 1
+        self._category_count = (self._category_count or 0) + 1
+        self._last_category = name
+        return Label
+    end
+    self.create_section_label = self.create_category
+    local Window = self
+    function self:create_tab(title: string, icon: string, category: string?)
+        if type(category) == "string" and category ~= "" then
+            if category ~= self._last_category then
+                self:create_category(category)
+            end
+        elseif not self._last_category and title ~= "Configs" then
+            self:create_category("Main")
+        end
         if type(icon) == "string" and TAB_ICON_ALIASES[icon:lower()] then
             icon = TAB_ICON_ALIASES[icon:lower()]
         elseif not icon or icon == "" or (not icon:find("rbxassetid://") and not icon:find("http")) then
@@ -3540,25 +4325,16 @@ function Library:create_ui()
         end
         local TabManager = { _title = title }
         local LayoutOrder = 0;
-        local font_params = Instance.new('GetTextBoundsParams')
-        font_params.Text = title
-        font_params.Font = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
-        font_params.Size = 13
-        font_params.Width = 10000
-        local font_size = Vector2.new(#title * 8, 13)
-        pcall(function()
-            font_size = TextService:GetTextBoundsAsync(font_params)
-        end)
         local first_tab = not Tabs:FindFirstChild('Tab')
         local Tab = Instance.new('TextButton')
         Tab.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Regular, Enum.FontStyle.Normal)
         Tab.TextColor3 = Color3.fromRGB(0, 0, 0)
         Tab.BorderColor3 = Color3.fromRGB(0, 0, 0)
         Tab.Text = ''
-        Tab.AutoButtonColor = true
+        Tab.AutoButtonColor = false
         Tab.BackgroundTransparency = 1
         Tab.Name = 'Tab'
-        Tab.Size = UDim2.new(0, 129, 0, 38)
+        Tab.Size = UDim2.new(0, 136, 0, 32)
         Tab.BorderSizePixel = 0
         Tab.TextSize = 14
         Tab.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
@@ -3570,18 +4346,19 @@ function Library:create_ui()
         local TextLabel = Instance.new('TextLabel')
         TextLabel.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
         TextLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-        TextLabel.TextTransparency = 0.65 
+        TextLabel.TextTransparency = 0
+        TextLabel.TextColor3 = Color3.fromRGB(140, 140, 140)
         TextLabel.Text = title
         Translator:bind(TextLabel, title)
         TextLabel.Size = UDim2.new(1, -44, 0, 16)
         TextLabel.AnchorPoint = Vector2.new(0, 0.5)
-        TextLabel.Position = UDim2.new(0, 38, 0.5, 0)
+        TextLabel.Position = UDim2.new(0, 36, 0.5, 0)
         TextLabel.BackgroundTransparency = 1
         TextLabel.TextXAlignment = Enum.TextXAlignment.Left
         TextLabel.TextTruncate = Enum.TextTruncate.AtEnd
         TextLabel.BorderSizePixel = 0
         TextLabel.BorderColor3 = Color3.fromRGB(0, 0, 0)
-        TextLabel.TextSize = 13
+        TextLabel.TextSize = 14
         TextLabel.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
         TextLabel.Parent = Tab
         local UIGradient = Instance.new('UIGradient')
@@ -3590,31 +4367,33 @@ function Library:create_ui()
             ColorSequenceKeypoint.new(0.7, Color3.fromRGB(155, 155, 155)),
             ColorSequenceKeypoint.new(1, Color3.fromRGB(58, 58, 58))
         }
+        UIGradient.Enabled = false
         UIGradient.Parent = TextLabel
         local Icon = Instance.new('ImageLabel')
         Icon.ScaleType = Enum.ScaleType.Fit
-        Icon.ImageTransparency = 0.75
+        Icon.ImageTransparency = 0
+        Icon.ImageColor3 = Color3.fromRGB(140, 140, 140)
         Icon.BorderColor3 = Color3.fromRGB(0, 0, 0)
         Icon.AnchorPoint = Vector2.new(0, 0.5)
         Icon.BackgroundTransparency = 1
         Icon.Position = UDim2.new(0, 12, 0.5, 0)
         Icon.Name = 'Icon'
         Icon.Image = icon
-        Icon.Size = UDim2.new(0, 18, 0, 18)
+        Icon.Size = UDim2.new(0, 15, 0, 15)
         Icon.BorderSizePixel = 0
         Icon.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
         Icon.Parent = Tab
         Tab.MouseEnter:Connect(function()
             if self._active_tab_btn ~= Tab then
                 TweenService:Create(Tab, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                    BackgroundColor3 = Color3.fromRGB(30, 30, 30),
-                    BackgroundTransparency = 0.8
+                    BackgroundColor3 = Color3.fromRGB(255, 255, 255),
+                    BackgroundTransparency = 0.975
                 }):Play()
                 TweenService:Create(TextLabel, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                    TextTransparency = 0.4
+                    TextTransparency = 0
                 }):Play()
                 TweenService:Create(Icon, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                    ImageTransparency = 0.5
+                    ImageTransparency = 0
                 }):Play()
             end
         end)
@@ -3624,10 +4403,10 @@ function Library:create_ui()
                     BackgroundTransparency = 1
                 }):Play()
                 TweenService:Create(TextLabel, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                    TextTransparency = 0.65
+                    TextTransparency = 0
                 }):Play()
                 TweenService:Create(Icon, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                    ImageTransparency = 0.75
+                    ImageTransparency = 0
                 }):Play()
             end
         end)
@@ -3651,7 +4430,7 @@ function Library:create_ui()
         LeftSection.Visible = false
         LeftSection.Parent = Sections
         local UIListLayout = Instance.new('UIListLayout')
-        UIListLayout.Padding = UDim.new(0, 12)
+        UIListLayout.Padding = UDim.new(0, 10)
         UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
         UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
         UIListLayout.Parent = LeftSection
@@ -3681,7 +4460,7 @@ function Library:create_ui()
         RightSection.Visible = false
         RightSection.Parent = Sections
         local UIListLayout = Instance.new('UIListLayout')
-        UIListLayout.Padding = UDim.new(0, 12)
+        UIListLayout.Padding = UDim.new(0, 10)
         UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
         UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
         UIListLayout.Parent = RightSection
@@ -3724,8 +4503,8 @@ function Library:create_ui()
                 _size = 0,
                 _multiplier = 0
             }
-            self._all_modules = self._all_modules or {}
-            table.insert(self._all_modules, ModuleManager)
+            Window._all_modules = Window._all_modules or {}
+            table.insert(Window._all_modules, ModuleManager)
             local module_persistent = settings.persist ~= false
             local module_exportable = settings.export
             if module_exportable == nil then
@@ -3739,12 +4518,12 @@ function Library:create_ui()
             local Module = Instance.new('Frame')
             Module.ClipsDescendants = true
             Module.BorderColor3 = Color3.fromRGB(0, 0, 0)
-            Module.BackgroundTransparency = 0.2
+            Module.BackgroundTransparency = 0
             Module.Position = UDim2.new(0, 0, 0, 0)
             Module.Name = 'Module'
-            Module.Size = UDim2.new(0, 240, 0, 93)
+            Module.Size = UDim2.new(0, 240, 0, 72)
             Module.BorderSizePixel = 0
-            Module.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+            Module.BackgroundColor3 = Color3.fromRGB(21, 21, 21)
             Module.Parent = settings.section
             Module.LayoutOrder = LayoutOrder
             LayoutOrder += 1
@@ -3752,11 +4531,11 @@ function Library:create_ui()
             UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
             UIListLayout.Parent = Module
             local UICorner = Instance.new('UICorner')
-            UICorner.CornerRadius = UDim.new(0, 8)
+            UICorner.CornerRadius = UDim.new(0, 10)
             UICorner.Parent = Module
             local UIStroke = Instance.new('UIStroke')
-            UIStroke.Color = Color3.fromRGB(42, 42, 42)
-            UIStroke.Transparency = 0.4
+            UIStroke.Color = Color3.fromRGB(255, 255, 255)
+            UIStroke.Transparency = 0.955
             UIStroke.Thickness = 1
             UIStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
             UIStroke.Parent = Module
@@ -3768,19 +4547,19 @@ function Library:create_ui()
             Header.AutoButtonColor = false
             Header.BackgroundTransparency = 1
             Header.Name = 'Header'
-            Header.Size = UDim2.new(1, 0, 0, 93)
+            Header.Size = UDim2.new(1, 0, 0, 72)
             Header.BorderSizePixel = 0
             Header.TextSize = 14
             Header.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
             Header.Parent = Module
             Header.MouseEnter:Connect(function()
                 TweenService:Create(Module, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                    BackgroundColor3 = Color3.fromRGB(26, 26, 26)
+                    BackgroundColor3 = Color3.fromRGB(24, 24, 24)
                 }):Play()
             end)
             Header.MouseLeave:Connect(function()
                 TweenService:Create(Module, TweenInfo.new(0.2, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                    BackgroundColor3 = Color3.fromRGB(22, 22, 22)
+                    BackgroundColor3 = Color3.fromRGB(21, 21, 21)
                 }):Play()
             end)
             local Icon = Instance.new('ImageLabel')
@@ -3793,14 +4572,15 @@ function Library:create_ui()
             Icon.BackgroundTransparency = 1
             Icon.Position = UDim2.new(0, 16, 0, 74)
             Icon.Name = 'Icon'
+            Icon.Visible = false
             Icon.Size = UDim2.new(0, 20, 0, 20)
             Icon.BorderSizePixel = 0
             Icon.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
             Icon.Parent = Header
             local ModuleName = Instance.new('TextLabel')
-            ModuleName.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Bold, Enum.FontStyle.Normal)
+            ModuleName.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
             ModuleName.TextColor3 = Color3.fromRGB(255, 255, 255)
-            ModuleName.TextTransparency = 0.1
+            ModuleName.TextTransparency = 0
             if not settings.rich then
                 ModuleName.Text = settings.title or "Feature"
                 Translator:bind(ModuleName, settings.title or "Feature")
@@ -3809,47 +4589,47 @@ function Library:create_ui()
                 ModuleName.Text = settings.richtext or "<font color='rgb(255,255,255)'>pivot</font> user"
             end;
             ModuleName.Name = 'ModuleName'
-            ModuleName.Size = UDim2.new(1, -32, 0, 15)
+            ModuleName.Size = UDim2.new(1, -72, 0, 18)
             ModuleName.AnchorPoint = Vector2.new(0, 0)
-            ModuleName.Position = UDim2.new(0, 16, 0, 18)
+            ModuleName.Position = UDim2.new(0, 16, 0, 16)
             ModuleName.BackgroundTransparency = 1
             ModuleName.TextXAlignment = Enum.TextXAlignment.Left
             ModuleName.TextTruncate = Enum.TextTruncate.AtEnd
             ModuleName.BorderSizePixel = 0
             ModuleName.BorderColor3 = Color3.fromRGB(0, 0, 0)
-            ModuleName.TextSize = 13
+            ModuleName.TextSize = 15
             ModuleName.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
             ModuleName.Parent = Header
             local Description = Instance.new('TextLabel')
             Description.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Regular, Enum.FontStyle.Normal)
-            Description.TextColor3 = Color3.fromRGB(160, 160, 160)
-            Description.TextTransparency = 0.3
+            Description.TextColor3 = Color3.fromRGB(125, 125, 125)
+            Description.TextTransparency = 0
             Description.Text = settings.description or ""
             if settings.description and settings.description ~= "" then
                 Translator:bind(Description, settings.description)
             end
             Description.Name = 'Description'
-            Description.Size = UDim2.new(1, -32, 0, 26)
+            Description.Size = UDim2.new(1, -72, 0, 16)
             Description.AnchorPoint = Vector2.new(0, 0)
-            Description.Position = UDim2.new(0, 16, 0, 37)
+            Description.Position = UDim2.new(0, 16, 0, 38)
             Description.BackgroundTransparency = 1
             Description.TextXAlignment = Enum.TextXAlignment.Left
             Description.TextYAlignment = Enum.TextYAlignment.Top
             Description.TextWrapped = true
-            Description.TextTruncate = Enum.TextTruncate.AtEnd
             Description.BorderSizePixel = 0
             Description.BorderColor3 = Color3.fromRGB(0, 0, 0)
-            Description.TextSize = 10
+            Description.TextSize = 12
+            Description.TextTruncate = Enum.TextTruncate.AtEnd
             Description.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
             Description.Parent = Header
             local Toggle = Instance.new('Frame')
             Toggle.Name = 'Toggle'
             Toggle.AnchorPoint = Vector2.new(1, 0.5)
-            Toggle.Position = UDim2.new(1, -16, 0, 74)
+            Toggle.Position = UDim2.new(1, -16, 0.5, 0)
             Toggle.BorderColor3 = Color3.fromRGB(0, 0, 0)
-            Toggle.Size = UDim2.new(0, 30, 0, 18)
+            Toggle.Size = UDim2.new(0, 32, 0, 18)
             Toggle.BorderSizePixel = 0
-            Toggle.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+            Toggle.BackgroundColor3 = Color3.fromRGB(38, 38, 38)
             Toggle.Parent = Header
             local UICorner = Instance.new('UICorner')
             UICorner.CornerRadius = UDim.new(1, 0)
@@ -3872,14 +4652,16 @@ function Library:create_ui()
             Divider.BackgroundTransparency = 0
             Divider.Position = UDim2.new(0, 0, 1, -1)
             Divider.Name = 'Divider'
-            Divider.Size = UDim2.new(1, 0, 0, 1)
+            Divider.Size = UDim2.new(1, -32, 0, 1)
+            Divider.Position = UDim2.new(0, 16, 1, -1)
             Divider.BorderSizePixel = 0
-            Divider.BackgroundColor3 = Color3.fromRGB(38, 38, 38)
+            Divider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+            Divider.BackgroundTransparency = 0.95
             Divider.Parent = Header
             local Options = Instance.new('Frame')
             Options.Name = 'Options'
             Options.BackgroundTransparency = 1
-            Options.Position = UDim2.new(0, 0, 0, 93)
+            Options.Position = UDim2.new(0, 0, 0, 72)
             Options.BorderColor3 = Color3.fromRGB(0, 0, 0)
             Options.Size = UDim2.new(1, 0, 0, 0)
             Options.AutomaticSize = Enum.AutomaticSize.Y
@@ -3888,11 +4670,11 @@ function Library:create_ui()
             Options.Visible = false
             Options.Parent = Module
             local UIPadding = Instance.new('UIPadding')
-            UIPadding.PaddingTop = UDim.new(0, 8)
-            UIPadding.PaddingBottom = UDim.new(0, 8)
+            UIPadding.PaddingTop = UDim.new(0, 6)
+            UIPadding.PaddingBottom = UDim.new(0, 10)
             UIPadding.Parent = Options
             local UIListLayout = Instance.new('UIListLayout')
-            UIListLayout.Padding = UDim.new(0, 8)
+            UIListLayout.Padding = UDim.new(0, 2)
             UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
             UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
             UIListLayout.Parent = Options
@@ -3910,14 +4692,18 @@ function Library:create_ui()
                             if target_attr and target_attr > 0 then
                                 child_h = target_attr
                             else
-                                child_h = child.Size.Y.Offset > 0 and child.Size.Y.Offset or 42
+                                child_h = child.Size.Y.Offset > 0 and child.Size.Y.Offset or 50
                             end
                         elseif child.Name == "Paragraph" or child.Name == "Text" then
                             local custom_scale = child:GetAttribute("CustomScale") or (child.Name == "Paragraph" and 70 or 50)
                             local rendered_h = (child.AbsoluteSize.Y > 0 and scale > 0) and math.round(child.AbsoluteSize.Y / scale) or 0
                             child_h = math.max(custom_scale, rendered_h)
                         else
-                            child_h = child.Size.Y.Offset > 0 and child.Size.Y.Offset or 24
+                            local rendered_h = (child.AbsoluteSize.Y > 0 and scale > 0) and math.round(child.AbsoluteSize.Y / scale) or 0
+                            child_h = math.max(child.Size.Y.Offset, rendered_h)
+                            if child_h <= 0 then
+                                child_h = 24
+                            end
                         end
                         total_h += child_h
                         visible_count += 1
@@ -3925,10 +4711,14 @@ function Library:create_ui()
                 end
 
                 if visible_count > 1 then
-                    total_h += (visible_count - 1) * 8
+                    total_h += (visible_count - 1) * 2
+                end
+                local content_y = UIListLayout.AbsoluteContentSize.Y
+                if content_y > 0 and scale > 0 then
+                    total_h = math.max(total_h, math.ceil(content_y / scale) + 16)
                 end
 
-                return 93 + total_h
+                return 72 + total_h
             end
             local function sync_module_size(animate)
                 if not ModuleManager._state then
@@ -3946,6 +4736,17 @@ function Library:create_ui()
                 end
             end
             ModuleManager.sync_size = sync_module_size
+            local content_sync_queued = false
+            UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+                if content_sync_queued or not ModuleManager._state then
+                    return
+                end
+                content_sync_queued = true
+                task.defer(function()
+                    content_sync_queued = false
+                    sync_module_size(false)
+                end)
+            end)
             local function hook_child_signals(child)
                 if child:IsA("GuiObject") and child.Name ~= "UIPadding" then
                     child:GetPropertyChangedSignal("Visible"):Connect(function()
@@ -3989,9 +4790,9 @@ function Library:create_ui()
                     end
                 end
 
-                local target_height = self._state and get_expanded_height() or 93
+                local target_height = self._state and get_expanded_height() or 72
                 local module_size = UDim2.fromOffset(240, target_height)
-                local toggle_color = self._state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(40, 40, 40)
+                local toggle_color = self._state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(38, 38, 38)
                 local circle_color = self._state and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(180, 180, 180)
                 local circle_position = self._state and UDim2.new(1, -15, 0.5, 0) or UDim2.new(0, 3, 0.5, 0)
 
@@ -4035,6 +4836,7 @@ function Library:create_ui()
                 if opts.callback ~= false and settings.callback then
                     settings.callback(self._state)
                 end
+                return true
             end
             Library:register_flag(settings.flag, 'boolean', {
                 default = false,
@@ -4093,7 +4895,7 @@ function Library:create_ui()
                 Title.BackgroundTransparency = 1
                 Title.TextXAlignment = Enum.TextXAlignment.Left
                 Title.TextYAlignment = Enum.TextYAlignment.Center
-                Title.TextSize = 11
+                Title.TextSize = 14
                 Title.AutomaticSize = Enum.AutomaticSize.Y
                 Title.Parent = Paragraph
                 local Body = Instance.new('TextLabel')
@@ -4211,6 +5013,7 @@ function Library:create_ui()
                 end)
                 function TextManager:Set(new_settings)
                     local is_rich = new_settings.rich == true
+                    Translator:rebind(Body, nil)
                     Body.RichText = is_rich
                     if not is_rich then
                         Body.Text = new_settings.text or "" 
@@ -4258,7 +5061,7 @@ function Library:create_ui()
                 Label.TextXAlignment = Enum.TextXAlignment.Left
                 Label.BorderSizePixel = 0
                 Label.Parent = Options
-                Label.TextSize = 11;
+                Label.TextSize = 13;
                 Label.LayoutOrder = LayoutOrderModule
                 local Textbox = Instance.new('TextBox')
                 Textbox.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Regular, Enum.FontStyle.Normal)
@@ -4270,7 +5073,7 @@ function Library:create_ui()
                 Textbox.Name = 'Textbox'
                 Textbox.Size = UDim2.new(0, 208, 0, 24)
                 Textbox.BorderSizePixel = 0
-                Textbox.TextSize = 11
+                Textbox.TextSize = 13
                 Textbox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
                 Textbox.BackgroundTransparency = 0
                 Textbox.ClearTextOnFocus = false
@@ -4461,7 +5264,7 @@ function Library:create_ui()
                 Checkbox.AutoButtonColor = false
                 Checkbox.BackgroundTransparency = 1
                 Checkbox.Name = "Checkbox"
-                Checkbox.Size = UDim2.new(0, 208, 0, 20)
+                Checkbox.Size = UDim2.new(0, 208, 0, 34)
                 Checkbox.BorderSizePixel = 0
                 Checkbox.Parent = Options
                 Checkbox.LayoutOrder = LayoutOrderModule
@@ -4469,15 +5272,16 @@ function Library:create_ui()
                 TitleLabel.Name = "TitleLabel"
                 if SelectedLanguage == "th" then
                     TitleLabel.FontFace = Font.new("rbxasset://fonts/families/NotoSansThai.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                    TitleLabel.TextSize = 12
+                    TitleLabel.TextSize = 14
                 else
                     TitleLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                    TitleLabel.TextSize = 11
+                    TitleLabel.TextSize = 14
                 end
-                TitleLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+                TitleLabel.TextColor3 = Color3.fromRGB(225, 225, 225)
                 TitleLabel.Text = settings.title or "Feature"
                 Translator:bind(TitleLabel, settings.title or "Feature")
                 TitleLabel.Size = UDim2.new(1, -75, 1, 0)
+                TitleLabel.TextTruncate = Enum.TextTruncate.AtEnd
                 TitleLabel.AnchorPoint = Vector2.new(0, 0.5)
                 TitleLabel.Position = UDim2.new(0, 2, 0.5, 0)
                 TitleLabel.BackgroundTransparency = 1
@@ -4497,6 +5301,7 @@ function Library:create_ui()
                 KeybindCorner.Parent = KeybindBox
                 local KBStroke = Instance.new("UIStroke")
                 KBStroke.Color = Color3.fromRGB(48, 48, 48)
+                KBStroke.Transparency = 1
                 KBStroke.Thickness = 1
                 KBStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
                 KBStroke.Parent = KeybindBox
@@ -4517,7 +5322,7 @@ function Library:create_ui()
                 KeybindLabel.BackgroundTransparency = 1
                 KeybindLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
                 KeybindLabel.TextScaled = false
-                KeybindLabel.TextSize = 10
+                KeybindLabel.TextSize = 11
                 KeybindLabel.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
                 KeybindLabel.Visible = false
                 KeybindLabel.ZIndex = 2
@@ -4586,17 +5391,17 @@ function Library:create_ui()
                     begin_component_keybind_capture(settings.flag, update_keybind_display)
                 end
                 KeybindButton.MouseButton1Click:Connect(begin_checkbox_keybind_capture)
-                if not Library:get_keybind_name(settings.flag) and settings.keybind and settings.keybind ~= "Unknown" then
+                if Library._config._keybinds[settings.flag] == nil and settings.keybind and settings.keybind ~= "Unknown" then
                     Library:set_keybind(settings.flag, settings.keybind)
                 end
                 update_keybind_display(Library:get_keybind_name(settings.flag))
                 local Box = Instance.new("Frame")
                 Box.BorderColor3 = Color3.fromRGB(0, 0, 0)
                 Box.AnchorPoint = Vector2.new(1, 0.5)
-                Box.BackgroundColor3 = initial_state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(40, 40, 40)
+                Box.BackgroundColor3 = initial_state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(38, 38, 38)
                 Box.Position = UDim2.new(1, 0, 0.5, 0)
                 Box.Name = "Box"
-                Box.Size = UDim2.new(0, 30, 0, 18)
+                Box.Size = UDim2.new(0, 32, 0, 18)
                 Box.BorderSizePixel = 0
                 Box.Parent = Checkbox
                 local UICorner = Instance.new("UICorner")
@@ -4625,7 +5430,7 @@ function Library:create_ui()
                         return false
                     end
                     self._state = next_state
-                    local box_color = next_state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(40, 40, 40)
+                    local box_color = next_state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(38, 38, 38)
                     local dot_position = next_state and UDim2.new(1, -15, 0.5, 0) or UDim2.new(0, 3, 0.5, 0)
                     local dot_color = next_state and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(180, 180, 180)
                     if opts.animate ~= false then
@@ -4720,14 +5525,14 @@ function Library:create_ui()
                     if is_toggle and (Library:get_keybind_name("ui_toggle_key") or Library:get_keybind_name("minimize_bind") or Library:get_keybind_name("minimize")) then
                         local existing_key = Library:get_toggle_keycode()
                         Library:set_toggle_keybind(existing_key)
-                    elseif not Library:get_keybind_name(flag) then
+                    elseif Library._config._keybinds[flag] == nil then
                         Library:set_keybind(flag, default_key)
                     end
                 end
 
                 local Row = Instance.new("Frame")
                 Row.Name = "KeybindRow"
-                Row.Size = UDim2.new(0, 208, 0, 24)
+                Row.Size = UDim2.new(0, 208, 0, 34)
                 Row.BackgroundTransparency = 1
                 Row.Parent = Options
                 Row.LayoutOrder = LayoutOrderModule
@@ -4739,7 +5544,7 @@ function Library:create_ui()
                 Translator:bind(Title, title)
                 Title.TextColor3 = Color3.fromRGB(180, 180, 180)
                 Title.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                Title.TextSize = 12
+                Title.TextSize = 14
                 Title.TextXAlignment = Enum.TextXAlignment.Left
                 Title.TextTruncate = Enum.TextTruncate.AtEnd
                 Title.Parent = Row
@@ -4752,7 +5557,7 @@ function Library:create_ui()
                 KeyBtn.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
                 KeyBtn.TextColor3 = Color3.fromRGB(180, 180, 180)
                 KeyBtn.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
-                KeyBtn.TextSize = 10
+                KeyBtn.TextSize = 11
                 KeyBtn.Text = ""
                 KeyBtn.AutoButtonColor = false
                 KeyBtn.BorderSizePixel = 0
@@ -4801,7 +5606,7 @@ function Library:create_ui()
                 update_display(Library:get_keybind_name(flag))
 
                 KeyBtn.MouseEnter:Connect(function()
-                    TweenService:Create(KeyBtn, TweenInfo.new(0.15), { BackgroundColor3 = Color3.fromRGB(40, 40, 40), TextColor3 = Color3.fromRGB(255, 255, 255) }):Play()
+                    TweenService:Create(KeyBtn, TweenInfo.new(0.15), { BackgroundColor3 = Color3.fromRGB(38, 38, 38), TextColor3 = Color3.fromRGB(255, 255, 255) }):Play()
                     TweenService:Create(Icon, TweenInfo.new(0.15), { ImageColor3 = Color3.fromRGB(255, 255, 255) }):Play()
                 end)
                 KeyBtn.MouseLeave:Connect(function()
@@ -4823,6 +5628,7 @@ function Library:create_ui()
                         end
                     end
                 end)
+                Connections:disconnect("keybind_press_" .. flag)
                 Connections["keybind_press_" .. flag] = keyPressConn
                 register_managed_keybind_listener(flag, update_display, Row)
                 Library:register_keybind_entry(flag, title, function() return true end, update_display, true)
@@ -4846,7 +5652,7 @@ function Library:create_ui()
                 end
                 self._size += (settings and settings.showtopic) and 26 or 14
                 local OuterFrame = Instance.new('Frame')
-                OuterFrame.Size = UDim2.new(0, 208, 0, (settings and settings.showtopic) and 20 or 8) 
+                OuterFrame.Size = UDim2.new(0, 208, 0, (settings and settings.showtopic) and 28 or 10) 
                 OuterFrame.BackgroundTransparency = 1 
                 OuterFrame.Name = 'OuterFrame'
                 OuterFrame.Parent = Options
@@ -4854,7 +5660,8 @@ function Library:create_ui()
                 if not settings or not settings.disableline then
                     local Divider = Instance.new('Frame')
                     Divider.Size = UDim2.new(1, 0, 0, 1)
-                    Divider.BackgroundColor3 = Color3.fromRGB(38, 38, 38) 
+                    Divider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+                    Divider.BackgroundTransparency = 0.95
                     Divider.BorderSizePixel = 0
                     Divider.Name = 'Divider'
                     Divider.Parent = OuterFrame
@@ -4864,25 +5671,25 @@ function Library:create_ui()
                 if settings and settings.showtopic then
                     local TextLabel = Instance.new('TextLabel')
                     TextLabel.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.SemiBold, Enum.FontStyle.Normal)
-                    TextLabel.TextColor3 = Color3.fromRGB(150, 150, 150) 
+                    TextLabel.TextColor3 = Color3.fromRGB(115, 115, 115)
                     TextLabel.Text = string.upper(settings.title or "")
                     if settings.title and settings.title ~= "" then
                         Translator:bind(TextLabel, settings.title, "Text", string.upper)
                     end
                     TextLabel.Size = UDim2.new(0, 0, 0, 14)
                     TextLabel.AutomaticSize = Enum.AutomaticSize.X
-                    TextLabel.Position = UDim2.new(0.5, 0, 0.5, 0)
+                    TextLabel.Position = UDim2.new(0, 0, 0.5, 0)
                     TextLabel.BackgroundTransparency = 0
-                    TextLabel.BackgroundColor3 = Color3.fromRGB(22, 22, 22)
-                    TextLabel.TextXAlignment = Enum.TextXAlignment.Center
+                    TextLabel.BackgroundColor3 = Color3.fromRGB(21, 21, 21)
+                    TextLabel.TextXAlignment = Enum.TextXAlignment.Left
                     TextLabel.BorderSizePixel = 0
-                    TextLabel.AnchorPoint = Vector2.new(0.5, 0.5)
-                    TextLabel.TextSize = 10
+                    TextLabel.AnchorPoint = Vector2.new(0, 0.5)
+                    TextLabel.TextSize = 11
                     TextLabel.ZIndex = 2
                     TextLabel.Parent = OuterFrame
                     local Pad = Instance.new('UIPadding')
-                    Pad.PaddingLeft = UDim.new(0, 6)
-                    Pad.PaddingRight = UDim.new(0, 6)
+                    Pad.PaddingLeft = UDim.new(0, 0)
+                    Pad.PaddingRight = UDim.new(0, 8)
                     Pad.Parent = TextLabel
                 end
                 if ModuleManager._state then
@@ -4961,7 +5768,7 @@ function Library:create_ui()
                 Slider.AutoButtonColor = false
                 Slider.BackgroundTransparency = 1
                 Slider.Name = 'Slider'
-                Slider.Size = UDim2.new(0, 208, 0, 28)
+                Slider.Size = UDim2.new(0, 208, 0, 38)
                 Slider.BorderSizePixel = 0
                 Slider.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
                 Slider.Parent = Options
@@ -4969,15 +5776,15 @@ function Library:create_ui()
                 local TextLabel = Instance.new('TextLabel')
                 if GG.SelectedLanguage == "th" then
                     TextLabel.FontFace = Font.new("rbxasset://fonts/families/NotoSansThai.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                    TextLabel.TextSize = 12;
+                    TextLabel.TextSize = 14;
                 else
                     TextLabel.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                    TextLabel.TextSize = 11;
+                    TextLabel.TextSize = 14;
                 end;
                 TextLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
                 TextLabel.Text = settings.title
                 Translator:bind(TextLabel, settings.title)
-                TextLabel.Size = UDim2.new(1, -56, 0, 14)
+                TextLabel.Size = UDim2.new(1, -56, 0, 18)
                 TextLabel.Position = UDim2.new(0, 0, 0, 0)
                 TextLabel.BackgroundTransparency = 1
                 TextLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -4988,17 +5795,17 @@ function Library:create_ui()
                 Value.TextColor3 = Color3.fromRGB(255, 255, 255)
                 Value.Text = tostring(initial_value)
                 Value.Name = 'Value'
-                Value.Size = UDim2.new(0, 50, 0, 14)
+                Value.Size = UDim2.new(0, 50, 0, 18)
                 Value.AnchorPoint = Vector2.new(1, 0)
                 Value.Position = UDim2.new(1, 0, 0, 0)
                 Value.BackgroundTransparency = 1
                 Value.TextXAlignment = Enum.TextXAlignment.Right
                 Value.BorderSizePixel = 0
-                Value.TextSize = 11
+                Value.TextSize = 13
                 Value.Parent = Slider
                 local TrackButton = Instance.new('TextButton')
                 TrackButton.BackgroundTransparency = 1
-                TrackButton.Position = UDim2.new(0, 0, 0, 16)
+                TrackButton.Position = UDim2.new(0, 0, 0, 22)
                 TrackButton.Size = UDim2.new(1, 0, 0, 12)
                 TrackButton.Text = ''
                 TrackButton.AutoButtonColor = false
@@ -5008,9 +5815,9 @@ function Library:create_ui()
                 Drag.AnchorPoint = Vector2.new(0, 0.5)
                 Drag.Position = UDim2.new(0, 0, 0.5, 0)
                 Drag.Name = 'Drag'
-                Drag.Size = UDim2.new(1, 0, 0, 6)
+                Drag.Size = UDim2.new(1, 0, 0, 4)
                 Drag.BorderSizePixel = 0
-                Drag.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+                Drag.BackgroundColor3 = Color3.fromRGB(36, 36, 36)
                 Drag.Parent = TrackButton
                 local DragCorner = Instance.new('UICorner')
                 DragCorner.CornerRadius = UDim.new(1, 0)
@@ -5030,7 +5837,7 @@ function Library:create_ui()
                 Circle.AnchorPoint = Vector2.new(0.5, 0.5)
                 Circle.Name = 'Circle'
                 Circle.Position = UDim2.new(1, 0, 0.5, 0)
-                Circle.Size = UDim2.new(0, 12, 0, 12)
+                Circle.Size = UDim2.new(0, 10, 0, 10)
                 Circle.BorderSizePixel = 0
                 Circle.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
                 Circle.Parent = Fill
@@ -5294,7 +6101,7 @@ function Library:create_ui()
                 Dropdown.AutoButtonColor = false
                 Dropdown.BackgroundTransparency = 1
                 Dropdown.Name = 'Dropdown'
-                Dropdown.Size = UDim2.new(0, 208, 0, 42)
+                Dropdown.Size = UDim2.new(0, 208, 0, 50)
                 Dropdown.BorderSizePixel = 0
                 Dropdown.Parent = Options
                 Dropdown:SetAttribute("TargetHeight", 42)
@@ -5306,16 +6113,16 @@ function Library:create_ui()
                 local TextLabel = Instance.new('TextLabel')
                 if GG.SelectedLanguage == "th" then
                     TextLabel.FontFace = Font.new("rbxasset://fonts/families/NotoSansThai.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                    TextLabel.TextSize = 12;
+                    TextLabel.TextSize = 14;
                 else
                     TextLabel.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Medium, Enum.FontStyle.Normal);
-                    TextLabel.TextSize = 11;
+                    TextLabel.TextSize = 14;
                 end;
                 TextLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
                 TextLabel.TextTransparency = 0.2
                 TextLabel.Text = settings.title
                 Translator:bind(TextLabel, settings.title)
-                TextLabel.Size = UDim2.new(1, 0, 0, 14)
+                TextLabel.Size = UDim2.new(1, 0, 0, 18)
                 TextLabel.BackgroundTransparency = 1
                 TextLabel.TextXAlignment = Enum.TextXAlignment.Left
                 TextLabel.BorderSizePixel = 0
@@ -5324,10 +6131,10 @@ function Library:create_ui()
                 Box.ClipsDescendants = true
                 Box.AnchorPoint = Vector2.new(0, 0)
                 Box.BackgroundTransparency = 0
-                Box.BackgroundColor3 = Color3.fromRGB(28, 28, 28)
-                Box.Position = UDim2.new(0, 0, 0, 18)
+                Box.BackgroundColor3 = Color3.fromRGB(27, 27, 27)
+                Box.Position = UDim2.new(0, 0, 0, 22)
                 Box.Name = 'Box'
-                Box.Size = UDim2.new(1, 0, 0, 24)
+                Box.Size = UDim2.new(1, 0, 0, 28)
                 Box.BorderSizePixel = 0
                 Box.Parent = Dropdown
                 local BoxCorner = Instance.new('UICorner')
@@ -5335,6 +6142,7 @@ function Library:create_ui()
                 BoxCorner.Parent = Box
                 local BoxStroke = Instance.new('UIStroke')
                 BoxStroke.Color = Color3.fromRGB(44, 44, 44)
+                BoxStroke.Transparency = 0.6
                 BoxStroke.Thickness = 1
                 BoxStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
                 BoxStroke.Parent = Box
@@ -5343,7 +6151,7 @@ function Library:create_ui()
                 Header.BackgroundTransparency = 1
                 Header.Position = UDim2.new(0, 0, 0, 0)
                 Header.Name = 'Header'
-                Header.Size = UDim2.new(1, 0, 0, 24)
+                Header.Size = UDim2.new(1, 0, 0, 28)
                 Header.BorderSizePixel = 0
                 Header.Text = ''
                 Header.AutoButtonColor = false
@@ -5358,7 +6166,7 @@ function Library:create_ui()
                 CurrentOption.BackgroundTransparency = 1
                 CurrentOption.TextXAlignment = Enum.TextXAlignment.Left
                 CurrentOption.BorderSizePixel = 0
-                CurrentOption.TextSize = 11
+                CurrentOption.TextSize = 13
                 CurrentOption.TextTruncate = Enum.TextTruncate.AtEnd
                 CurrentOption.Parent = Header
                 local Arrow = Instance.new('ImageLabel')
@@ -5445,8 +6253,8 @@ function Library:create_ui()
                             local is_sel = selected[option_text] == true
                             option_button.TextColor3 = is_sel and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(160, 160, 160)
                             option_button.TextTransparency = is_sel and 0 or 0.2
-                            option_button.BackgroundColor3 = is_sel and Color3.fromRGB(45, 80, 140) or Color3.fromRGB(28, 28, 28)
-                            option_button.BackgroundTransparency = is_sel and 0 or 1
+                            option_button.BackgroundColor3 = is_sel and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(28, 28, 28)
+                            option_button.BackgroundTransparency = is_sel and 0.92 or 1
                             if settings.multi_dropdown then
                                 option_button.Text = (is_sel and "  [✓] " or "  [ ] ") .. option_text
                             end
@@ -5474,11 +6282,11 @@ function Library:create_ui()
                         Library:close_all_dropdowns(self)
                     end
                     self._state = not self._state
-                    local target_dropdown_h = self._state and (42 + self._size) or 42
-                    local target_box_h = self._state and (24 + self._size) or 24
+                    local target_dropdown_h = self._state and (50 + self._size) or 50
+                    local target_box_h = self._state and (28 + self._size) or 28
                     Dropdown:SetAttribute("TargetHeight", target_dropdown_h)
                     local target_h = get_expanded_height()
-                    local module_size = ModuleManager._state and UDim2.fromOffset(240, target_h) or UDim2.fromOffset(240, 93)
+                    local module_size = ModuleManager._state and UDim2.fromOffset(240, target_h) or UDim2.fromOffset(240, 72)
                     local dropdown_size = UDim2.fromOffset(208, target_dropdown_h)
                     local box_size = UDim2.new(1, 0, 0, target_box_h)
                     local arrow_rotation = self._state and 180 or 0
@@ -5508,7 +6316,7 @@ function Library:create_ui()
                     local Option = Instance.new('TextButton')
                     Option.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Medium, Enum.FontStyle.Normal)
                     Option.TextTransparency = 0.2
-                    Option.TextSize = 12
+                    Option.TextSize = 14
                     Option.Size = UDim2.new(1, 0, 0, 26)
                     Option.TextColor3 = Color3.fromRGB(160, 160, 160)
                     Option.BorderColor3 = Color3.fromRGB(0, 0, 0)
@@ -5528,7 +6336,7 @@ function Library:create_ui()
                         local is_sel = false
                         if settings.multi_dropdown then
                             for _, val in ipairs(DropdownManager._value or {}) do
-                                if val == option_data.text then is_sel = true break end
+                                if val == option_data.text then is_sel = true; break end
                             end
                         else
                             is_sel = DropdownManager._value == option_data.text
@@ -5545,7 +6353,7 @@ function Library:create_ui()
                         local is_sel = false
                         if settings.multi_dropdown then
                             for _, val in ipairs(DropdownManager._value or {}) do
-                                if val == option_data.text then is_sel = true break end
+                                if val == option_data.text then is_sel = true; break end
                             end
                         else
                             is_sel = DropdownManager._value == option_data.text
@@ -5690,7 +6498,7 @@ function Library:create_ui()
                         Library:set_keybind(settings.flag, saved_feature.BIND)
                     end
                 end
-                local checked = action_only and false or (migrated_checked ~= nil and migrated_checked or (typeof(saved_feature) == "boolean" and saved_feature or default_checked))
+                local checked = if action_only then false elseif migrated_checked ~= nil then migrated_checked elseif typeof(saved_feature) == "boolean" then saved_feature else default_checked
                 if not action_only then
                     Library:register_flag(settings.flag, 'boolean', {
                         default = default_checked,
@@ -5708,11 +6516,11 @@ function Library:create_ui()
                         keybind_export = keybind_export
                     })
                 end
-                if not Library:get_keybind_name(settings.flag) and settings.keybind and settings.keybind ~= "Unknown" then
+                if Library._config._keybinds[settings.flag] == nil and settings.keybind and settings.keybind ~= "Unknown" then
                     Library:set_keybind(settings.flag, settings.keybind)
                 end
                 local FeatureContainer = Instance.new("Frame")
-                FeatureContainer.Size = UDim2.new(0, 208, 0, 24)
+                FeatureContainer.Size = UDim2.new(0, 208, 0, 34)
                 FeatureContainer.BackgroundTransparency = 1
                 FeatureContainer.Parent = Options
                 FeatureContainer.LayoutOrder = LayoutOrderModule
@@ -5724,7 +6532,7 @@ function Library:create_ui()
                 UIListLayout.Parent = FeatureContainer
                 local FeatureButton = Instance.new("TextButton")
                 FeatureButton.FontFace = Font.new('rbxasset://fonts/families/GothamSSm.json', Enum.FontWeight.Medium, Enum.FontStyle.Normal);
-                FeatureButton.TextSize = 11;
+                FeatureButton.TextSize = 13;
                 FeatureButton.Size = UDim2.new(1, -96, 0, 22)
                 FeatureButton.BackgroundColor3 = Color3.fromRGB(28, 28, 28)
                 FeatureButton.TextColor3 = Color3.fromRGB(200, 200, 200)
@@ -5764,7 +6572,7 @@ function Library:create_ui()
                 KeybindBox.Size = UDim2.new(0, 24, 0, 20)
                 KeybindBox.BackgroundColor3 = Color3.fromRGB(32, 32, 32)
                 KeybindBox.TextColor3 = Color3.fromRGB(180, 180, 180)
-                KeybindBox.TextSize = 10
+                KeybindBox.TextSize = 11
                 KeybindBox.Text = ""
                 KeybindBox.BackgroundTransparency = 0
                 KeybindBox.LayoutOrder = 1
@@ -5851,9 +6659,10 @@ function Library:create_ui()
                 end
                 local UseF_Var = nil;
                 if not action_only then
+                    local initial_checked = checked == true
                     local Checkbox = Instance.new("TextButton")
-                    Checkbox.Size = UDim2.new(0, 30, 0, 18)
-                    Checkbox.BackgroundColor3 = initial_checked and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(40, 40, 40)
+                    Checkbox.Size = UDim2.new(0, 32, 0, 18)
+                    Checkbox.BackgroundColor3 = initial_checked and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(38, 38, 38)
                     Checkbox.Text = ""
                     Checkbox.AutoButtonColor = false
                     Checkbox.BorderSizePixel = 0
@@ -5885,7 +6694,7 @@ function Library:create_ui()
                             return false
                         end
                         checked = next_checked
-                        local checkbox_color = checked and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(40, 40, 40)
+                        local checkbox_color = checked and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(38, 38, 38)
                         local dot_position = checked and UDim2.new(1, -15, 0.5, 0) or UDim2.new(0, 3, 0.5, 0)
                         local dot_color = checked and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(180, 180, 180)
                         if opts.animate ~= false then
@@ -5918,6 +6727,7 @@ function Library:create_ui()
                     Library:register_component(settings.flag, function(value, opts)
                         setChecked(value == true, opts)
                     end)
+                    checked = nil
                     setChecked(initial_checked, {
                         persist = false,
                         animate = false,
@@ -6036,7 +6846,7 @@ function Library:create_ui()
                 Translator:bind(Button, s.title)
                 Button.TextColor3 = Color3.fromRGB(200, 200, 200)
                 Button.FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Medium, Enum.FontStyle.Normal)
-                Button.TextSize = 11
+                Button.TextSize = 13
                 Button.AutoButtonColor = false
                 Button.BorderSizePixel = 0
                 Button.ClipsDescendants = true
@@ -6054,7 +6864,7 @@ function Library:create_ui()
 
                 Button.MouseEnter:Connect(function()
                     TweenService:Create(Button, TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
-                        BackgroundColor3 = Color3.fromRGB(40, 40, 40),
+                        BackgroundColor3 = Color3.fromRGB(38, 38, 38),
                         TextColor3 = Color3.fromRGB(255, 255, 255)
                     }):Play()
                     TweenService:Create(Stroke, TweenInfo.new(0.18, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
@@ -6078,7 +6888,7 @@ function Library:create_ui()
                     }):Play()
                     task.delay(0.08, function()
                         TweenService:Create(Button, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-                            BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+                            BackgroundColor3 = Color3.fromRGB(38, 38, 38)
                         }):Play()
                     end)
                     pcall(cb)
@@ -6441,7 +7251,7 @@ function Library:create_ui()
             }):Play()
             task.delay(0.12, function()
                 TweenService:Create(ToggleIcon, TweenInfo.new(0.15, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-                    Size = UDim2.new(0, 24, 0, 24)
+                    Size = UDim2.new(0, 26, 0, 26)
                 }):Play()
             end)
         end)

@@ -1,4 +1,33 @@
- if not LPH_OBFUSCATED then
+ local DEMO_ROOT = "PivotUIPreviewRevised"
+local function map_demo_path(path)
+    if type(path) ~= "string" then
+        return path
+    end
+    local normalized = path:gsub("\\", "/")
+    local prefixes = { "Pivot-KSY", "Pivot", "pivot", "Allusive", "RONI", "roni" }
+    for _, prefix in ipairs(prefixes) do
+        if normalized == prefix or normalized:sub(1, #prefix + 1) == prefix .. "/" then
+            return DEMO_ROOT .. "/" .. normalized
+        end
+    end
+    return path
+end
+local function wrap_fs(original)
+    if type(original) ~= "function" then
+        return nil
+    end
+    return function(path, ...)
+        return original(map_demo_path(path), ...)
+    end
+end
+if type(isfile) == "function" then isfile = wrap_fs(isfile) end
+if type(isfolder) == "function" then isfolder = wrap_fs(isfolder) end
+if type(makefolder) == "function" then makefolder = wrap_fs(makefolder) end
+if type(readfile) == "function" then readfile = wrap_fs(readfile) end
+if type(writefile) == "function" then writefile = wrap_fs(writefile) end
+if type(delfile) == "function" then delfile = wrap_fs(delfile) end
+if type(listfiles) == "function" then listfiles = wrap_fs(listfiles) end
+local SOURCE = [=[ if not LPH_OBFUSCATED then
     LPH_ENCFUNC = function(callback) return callback end
     LPH_NO_VIRTUALIZE = function(...) return ... end
     LPH_NO_UPVALUES = function(...) return ... end
@@ -1412,7 +1441,7 @@ function Translator:init(saved_option: string?)
 end
 
 Library = {
-    _layout = "ledger",
+    _layout = "panel",
     _config = Config:load(Config.active),
     _choosing_keybind = false,
     _device = nil,
@@ -3430,7 +3459,7 @@ function Library:create_ui()
     Container.BorderSizePixel = 0
     Container.Parent = Allusive
     local UICorner = Instance.new('UICorner')
-    UICorner.CornerRadius = UDim.new(0, Library._layout == "cards" and 12 or 0)
+    UICorner.CornerRadius = UDim.new(0, 12)
     UICorner.Parent = Container
     local UIStroke = Instance.new('UIStroke')
     UIStroke.Color = Color3.fromRGB(255, 255, 255)
@@ -3891,9 +3920,7 @@ function Library:create_ui()
         TweenService:Create(Container, TweenInfo.new(0.5, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
             Size = UDim2.fromOffset(698, 479)
         }):Play()
-        if Library._layout == "cards" then
-            self._acrylic_blur = AcrylicBlur.new(Container)
-        end
+        self._acrylic_blur = AcrylicBlur.new(Container)
         self:create_configs_tab()
     end
     task.delay(0.5, function()
@@ -4352,24 +4379,17 @@ function Library:create_ui()
     end
     function self:update_sections(left_section: ScrollingFrame, right_section: ScrollingFrame)
         Library:close_all_dropdowns()
-        local ledger = Library._layout ~= "cards"
+        local panel = Library._layout ~= "cards"
         for _, object in Sections:GetChildren() do
-            if ledger then
-                object.Visible = object == left_section
-            elseif object == left_section or object == right_section then
+            if object == left_section or object == right_section then
                 object.Visible = true
-            else
-                object.Visible = false
+                continue
             end
-        end
-        if ledger and left_section then
-            left_section.Position = UDim2.new(0, 180, 0, 8)
-            left_section.Size = UDim2.new(0, 500, 1, -16)
-            left_section.ScrollBarThickness = 4
+            object.Visible = false
         end
         task.defer(function()
             for _, mod in ipairs(self._all_modules or {}) do
-                if mod.sync_size and (mod._state or ledger) then
+                if mod.sync_size and (mod._state or panel) then
                     mod.sync_size(false)
                 end
             end
@@ -4624,50 +4644,40 @@ function Library:create_ui()
             if module_exportable == nil then
                 module_exportable = module_persistent
             end
-            local use_ledger = Library._layout ~= "cards"
-            local right_side = settings.section == "right"
-            if right_side and not use_ledger then
+            local panel = Library._layout ~= "cards"
+            if settings.section == "right" then
                 settings.section = RightSection
             else
                 settings.section = LeftSection
             end
             local header_h = 72
-            if use_ledger then
-                header_h = (settings.description and settings.description ~= "") and 46 or 32
-            end
             local function module_size(height)
-                if use_ledger then
-                    return UDim2.new(1, -8, 0, height)
-                end
                 return UDim2.fromOffset(240, height)
             end
             local function row_size(height)
-                if use_ledger then
-                    return UDim2.new(1, 0, 0, height)
-                end
                 return UDim2.new(0, 208, 0, height)
             end
             local Module = Instance.new('Frame')
-            Module.ClipsDescendants = not use_ledger
+            Module.ClipsDescendants = true
             Module.BorderColor3 = Color3.fromRGB(0, 0, 0)
-            Module.BackgroundTransparency = use_ledger and 1 or 0
+            Module.BackgroundTransparency = panel and 1 or 0
             Module.Position = UDim2.new(0, 0, 0, 0)
             Module.Name = 'Module'
             Module.Size = module_size(header_h)
             Module.BorderSizePixel = 0
             Module.BackgroundColor3 = Color3.fromRGB(21, 21, 21)
             Module.Parent = settings.section
-            Module.LayoutOrder = LayoutOrder + (right_side and use_ledger and 500 or 0)
+            Module.LayoutOrder = LayoutOrder
             LayoutOrder += 1
             local UIListLayout = Instance.new('UIListLayout')
             UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
             UIListLayout.Parent = Module
             local UICorner = Instance.new('UICorner')
-            UICorner.CornerRadius = UDim.new(0, use_ledger and 0 or 10)
+            UICorner.CornerRadius = UDim.new(0, panel and 0 or 10)
             UICorner.Parent = Module
             local UIStroke = Instance.new('UIStroke')
             UIStroke.Color = Color3.fromRGB(255, 255, 255)
-            UIStroke.Transparency = use_ledger and 1 or 0.955
+            UIStroke.Transparency = panel and 1 or 0.955
             UIStroke.Thickness = 1
             UIStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
             UIStroke.Parent = Module
@@ -4787,8 +4797,8 @@ function Library:create_ui()
             Divider.Size = UDim2.new(1, -32, 0, 1)
             Divider.Position = UDim2.new(0, 16, 1, -1)
             Divider.BorderSizePixel = 0
-            Divider.BackgroundColor3 = use_ledger and Color3.fromRGB(42, 42, 42) or Color3.fromRGB(255, 255, 255)
-            Divider.BackgroundTransparency = use_ledger and 0 or 0.95
+            Divider.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+            Divider.BackgroundTransparency = 0.95
             Divider.Parent = Header
             local Options = Instance.new('Frame')
             Options.Name = 'Options'
@@ -4799,17 +4809,15 @@ function Library:create_ui()
             Options.AutomaticSize = Enum.AutomaticSize.Y
             Options.BorderSizePixel = 0
             Options.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
-            Options.Visible = use_ledger
+            Options.Visible = panel
             Options.Parent = Module
             local UIPadding = Instance.new('UIPadding')
-            UIPadding.PaddingTop = UDim.new(0, use_ledger and 2 or 6)
-            UIPadding.PaddingBottom = UDim.new(0, use_ledger and 8 or 10)
-            UIPadding.PaddingLeft = UDim.new(0, use_ledger and 4 or 0)
-            UIPadding.PaddingRight = UDim.new(0, use_ledger and 4 or 0)
+            UIPadding.PaddingTop = UDim.new(0, 6)
+            UIPadding.PaddingBottom = UDim.new(0, 10)
             UIPadding.Parent = Options
             local UIListLayout = Instance.new('UIListLayout')
-            UIListLayout.Padding = UDim.new(0, use_ledger and 0 or 2)
-            UIListLayout.HorizontalAlignment = use_ledger and Enum.HorizontalAlignment.Left or Enum.HorizontalAlignment.Center
+            UIListLayout.Padding = UDim.new(0, 2)
+            UIListLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
             UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
             UIListLayout.Parent = Options
             local function get_expanded_height(): number
@@ -4855,12 +4863,12 @@ function Library:create_ui()
                 return header_h + total_h
             end
             local function sync_module_size(animate)
-                if not ModuleManager._state and not use_ledger then
+                if not ModuleManager._state and not panel then
                     return
                 end
                 local target_h = get_expanded_height()
                 if math.abs(Module.Size.Y.Offset - target_h) > 0 then
-                    if animate and not use_ledger then
+                    if animate and not panel then
                         TweenService:Create(Module, TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
                             Size = module_size(target_h)
                         }):Play()
@@ -4872,7 +4880,7 @@ function Library:create_ui()
             ModuleManager.sync_size = sync_module_size
             local content_sync_queued = false
             UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-                if content_sync_queued or (not ModuleManager._state and not use_ledger) then
+                if content_sync_queued or (not ModuleManager._state and not panel) then
                     return
                 end
                 content_sync_queued = true
@@ -4924,17 +4932,17 @@ function Library:create_ui()
                     end
                 end
 
-                local target_height = (self._state or use_ledger) and get_expanded_height() or header_h
+                local target_height = (self._state or panel) and get_expanded_height() or header_h
                 local next_module_size = module_size(target_height)
                 local toggle_color = self._state and Color3.fromRGB(255, 255, 255) or Color3.fromRGB(38, 38, 38)
                 local circle_color = self._state and Color3.fromRGB(18, 18, 18) or Color3.fromRGB(180, 180, 180)
                 local circle_position = self._state and UDim2.new(1, -15, 0.5, 0) or UDim2.new(0, 3, 0.5, 0)
 
-                if self._state or use_ledger then
+                if self._state or panel then
                     Options.Visible = true
                 end
 
-                if opts.animate ~= false and not use_ledger then
+                if opts.animate ~= false and not panel then
                     local tween = TweenService:Create(Module, TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out), {
                         Size = next_module_size
                     })
@@ -4955,7 +4963,7 @@ function Library:create_ui()
                     }):Play()
                 else
                     Module.Size = next_module_size
-                    if not self._state and not use_ledger then
+                    if not self._state and not panel then
                         Options.Visible = false
                     end
                     Toggle.BackgroundColor3 = toggle_color
@@ -5205,7 +5213,7 @@ function Library:create_ui()
                 Translator:bind(Textbox, settings.placeholder or "Enter text...", "PlaceholderText")
                 Textbox.Text = initial_text
                 Textbox.Name = 'Textbox'
-                Textbox.Size = row_size(use_ledger and 32 or 24)
+                Textbox.Size = row_size(24)
                 Textbox.BorderSizePixel = 0
                 Textbox.TextSize = 13
                 Textbox.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
@@ -5398,8 +5406,7 @@ function Library:create_ui()
                 Checkbox.AutoButtonColor = false
                 Checkbox.BackgroundTransparency = 1
                 Checkbox.Name = "Checkbox"
-                Checkbox.Size = row_size(use_ledger and 40 or 34)
-                Checkbox.AutomaticSize = use_ledger and Enum.AutomaticSize.Y or Enum.AutomaticSize.None
+                Checkbox.Size = row_size(34)
                 Checkbox.BorderSizePixel = 0
                 Checkbox.Parent = Options
                 Checkbox.LayoutOrder = LayoutOrderModule
@@ -5416,8 +5423,7 @@ function Library:create_ui()
                 TitleLabel.Text = settings.title or "Feature"
                 Translator:bind(TitleLabel, settings.title or "Feature")
                 TitleLabel.Size = UDim2.new(1, -75, 1, 0)
-                TitleLabel.TextTruncate = use_ledger and Enum.TextTruncate.None or Enum.TextTruncate.AtEnd
-                TitleLabel.TextWrapped = use_ledger
+                TitleLabel.TextTruncate = Enum.TextTruncate.AtEnd
                 TitleLabel.AnchorPoint = Vector2.new(0, 0.5)
                 TitleLabel.Position = UDim2.new(0, 2, 0.5, 0)
                 TitleLabel.BackgroundTransparency = 1
@@ -5668,7 +5674,7 @@ function Library:create_ui()
 
                 local Row = Instance.new("Frame")
                 Row.Name = "KeybindRow"
-                Row.Size = row_size(use_ledger and 40 or 34)
+                Row.Size = row_size(34)
                 Row.BackgroundTransparency = 1
                 Row.Parent = Options
                 Row.LayoutOrder = LayoutOrderModule
@@ -5788,7 +5794,7 @@ function Library:create_ui()
                 end
                 self._size += (settings and settings.showtopic) and 26 or 14
                 local OuterFrame = Instance.new('Frame')
-                OuterFrame.Size = row_size((settings and settings.showtopic) and (use_ledger and 32 or 28) or 10) 
+                OuterFrame.Size = row_size((settings and settings.showtopic) and 28 or 10) 
                 OuterFrame.BackgroundTransparency = 1 
                 OuterFrame.Name = 'OuterFrame'
                 OuterFrame.Parent = Options
@@ -5904,7 +5910,7 @@ function Library:create_ui()
                 Slider.AutoButtonColor = false
                 Slider.BackgroundTransparency = 1
                 Slider.Name = 'Slider'
-                Slider.Size = row_size(use_ledger and 48 or 38)
+                Slider.Size = row_size(38)
                 Slider.BorderSizePixel = 0
                 Slider.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
                 Slider.Parent = Options
@@ -6422,13 +6428,13 @@ function Library:create_ui()
                     local target_box_h = self._state and (28 + self._size) or 28
                     Dropdown:SetAttribute("TargetHeight", target_dropdown_h)
                     local target_h = get_expanded_height()
-                    local next_module_size = (ModuleManager._state or use_ledger) and module_size(target_h) or module_size(header_h)
+                    local next_module_size = (ModuleManager._state or panel) and module_size(target_h) or module_size(header_h)
                     local dropdown_size = row_size(target_dropdown_h)
                     local box_size = UDim2.new(1, 0, 0, target_box_h)
                     local arrow_rotation = self._state and 180 or 0
                     if opts.animate ~= false then
                         local tween_info = TweenInfo.new(0.3, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-                        if ModuleManager._state or use_ledger then
+                        if ModuleManager._state or panel then
                             TweenService:Create(Module, tween_info, { Size = next_module_size }):Play()
                         end
                         local dd_tween = TweenService:Create(Dropdown, tween_info, { Size = dropdown_size })
@@ -6439,7 +6445,7 @@ function Library:create_ui()
                         TweenService:Create(Box, tween_info, { Size = box_size }):Play()
                         TweenService:Create(Arrow, tween_info, { Rotation = arrow_rotation }):Play()
                     else
-                        if ModuleManager._state or use_ledger then
+                        if ModuleManager._state or panel then
                             Module.Size = next_module_size
                         end
                         Dropdown.Size = dropdown_size
@@ -6656,7 +6662,7 @@ function Library:create_ui()
                     Library:set_keybind(settings.flag, settings.keybind)
                 end
                 local FeatureContainer = Instance.new("Frame")
-                FeatureContainer.Size = row_size(use_ledger and 40 or 34)
+                FeatureContainer.Size = row_size(34)
                 FeatureContainer.BackgroundTransparency = 1
                 FeatureContainer.Parent = Options
                 FeatureContainer.LayoutOrder = LayoutOrderModule
@@ -6969,7 +6975,7 @@ function Library:create_ui()
 
                 local ButtonFrame = Instance.new("Frame")
                 ButtonFrame.Name = "ButtonRow"
-                ButtonFrame.Size = row_size(use_ledger and 36 or 26)
+                ButtonFrame.Size = row_size(26)
                 ButtonFrame.BackgroundTransparency = 1
                 ButtonFrame.LayoutOrder = LayoutOrderModule
                 ButtonFrame.Parent = Options
@@ -7400,3 +7406,54 @@ function Library:create_ui()
     return self
 end
 return Library
+]=]
+local Library = loadstring(SOURCE)()
+local Window = Library.new()
+local Primary = Window:create_tab("Primary", "eye")
+local GroupA = Primary:create_section("Group A", "left")
+GroupA:create_toggle({
+    title = "Option",
+    flag = "demo_option",
+    default = false,
+    callback = function() end,
+})
+GroupA:create_slider({
+    title = "Level",
+    flag = "demo_level",
+    min = 0,
+    max = 100,
+    default = 25,
+})
+GroupA:create_dropdown({
+    title = "Choice",
+    flag = "demo_choice",
+    options = { "One", "Two", "Three" },
+    default = "One",
+})
+local GroupB = Primary:create_section("Group B", "right")
+GroupB:create_textbox({
+    title = "Note",
+    flag = "demo_note",
+    placeholder = "Text",
+})
+GroupB:create_button({
+    title = "Run",
+    callback = function()
+        Window:notify({ title = "Preview", text = "Button pressed.", duration = 2 })
+    end,
+})
+GroupB:create_keybind({
+    title = "Shortcut",
+    flag = "demo_shortcut",
+    default = Enum.KeyCode.Q,
+    callback = function() end,
+})
+local Secondary = Window:create_tab("Secondary", "settings")
+local GroupC = Secondary:create_section("Group C", "left")
+GroupC:create_paragraph({ title = "Read me", text = "UI preview only." })
+GroupC:create_feature({
+    title = "Action",
+    flag = "demo_action",
+    default = false,
+})
+return Window
